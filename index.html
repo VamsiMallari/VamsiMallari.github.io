@@ -87,51 +87,6 @@
             100% { box-shadow: inset 0 0 0 3px #ff0000; }
         }
     </style>
-
-<!-- Firebase SDK -->
-<script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-app.js";
-  import { getFirestore, collection, getDocs, addDoc } from "https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore.js";
-
-  const firebaseConfig = {
-    apiKey: "AIzaSyCuSurKpIMGQv8-yu4txJE_8_KZk5lSJ3w",
-    authDomain: "chess-puzzels-rkv.firebaseapp.com",
-    projectId: "chess-puzzels-rkv",
-    storageBucket: "chess-puzzels-rkv.firebasestorage.app",
-    messagingSenderId: "130806565295",
-    appId: "1:130806565295:web:6f09088b2072e815ecc75a",
-    measurementId: "G-87H1RF04D7"
-  };
-
-  const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
-
-  // Save puzzle
-  window.savePuzzle = async function(puzzle) {
-    try {
-      await addDoc(collection(db, "puzzles"), puzzle);
-      alert("Puzzle saved to Firebase!");
-    } catch (e) {
-      console.error("Error adding puzzle: ", e);
-    }
-  }
-
-  // Load puzzles
-  window.loadPuzzles = async function() {
-    try {
-      const querySnapshot = await getDocs(collection(db, "puzzles"));
-      const puzzles = [];
-      querySnapshot.forEach((doc) => {
-        puzzles.push(doc.data());
-      });
-      return puzzles;
-    } catch (e) {
-      console.error("Error loading puzzles: ", e);
-      return [];
-    }
-  }
-</script>
-
 </head>
 <body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen">
     <!-- User Login Modal -->
