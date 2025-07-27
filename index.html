@@ -1,0 +1,1482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chess Puzzles Hub</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .chess-square {
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            cursor: pointer;
+            user-select: none;
+            border: 1px solid #333;
+        }
+        .light-square { background-color: #f0d9b5; }
+        .dark-square { background-color: #b58863; }
+        .chess-board-container {
+            display: inline-block;
+            position: relative;
+        }
+        .rank-label, .file-label {
+            font-weight: bold;
+            font-size: 14px;
+            color: #333;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .rank-label {
+            width: 20px;
+            height: 60px;
+        }
+        .file-label {
+            width: 60px;
+            height: 20px;
+        }
+        .selected { box-shadow: inset 0 0 0 3px #ff6b6b; }
+        .possible-move { 
+            position: relative;
+        }
+        .possible-move::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 20px;
+            height: 20px;
+            background-color: rgba(0, 255, 0, 0.6);
+            border-radius: 50%;
+        }
+        .piece-bank {
+            display: flex;
+            gap: 10px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+        .piece-bank-item {
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            cursor: pointer;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            background-color: white;
+        }
+        .piece-bank-item:hover {
+            border-color: #007bff;
+        }
+        .king-in-check {
+            box-shadow: inset 0 0 0 3px #ff0000 !important;
+            animation: pulse-red 1s infinite;
+        }
+        @keyframes pulse-red {
+            0% { box-shadow: inset 0 0 0 3px #ff0000; }
+            50% { box-shadow: inset 0 0 0 5px #ff0000; }
+            100% { box-shadow: inset 0 0 0 3px #ff0000; }
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen">
+    <!-- User Login Modal -->
+    <div id="loginModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white p-8 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Welcome to Chess Puzzles Hub</h2>
+            <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2">Enter Your Name:</label>
+                <input type="text" id="userName" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500" placeholder="Your unique name for today">
+            </div>
+            <div id="nameError" class="text-red-500 text-sm mb-4 hidden">This name has already been used today. Please choose another name.</div>
+            <button onclick="enterSite()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Enter Site</button>
+        </div>
+    </div>
+
+    <!-- Main Navigation -->
+    <nav class="bg-white shadow-lg">
+        <div class="max-w-7xl mx-auto px-4">
+            <div class="flex justify-between items-center py-4">
+                <h1 class="text-2xl font-bold text-gray-800">Chess Puzzles Hub</h1>
+                <div class="flex space-x-4">
+                    <button onclick="showSection('create')" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition duration-200">Create Puzzle</button>
+                    <button onclick="showSection('puzzles')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition duration-200">View Puzzles</button>
+                    <button onclick="showSection('results')" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition duration-200">Results</button>
+                </div>
+                <div class="text-gray-600">Welcome, <span id="currentUser" class="font-semibold"></span></div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Create Puzzle Section -->
+    <div id="createSection" class="max-w-6xl mx-auto p-6 hidden">
+        <h2 class="text-3xl font-bold text-gray-800 mb-6">Create New Puzzle</h2>
+        <div class="bg-white rounded-lg shadow-lg p-6">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div>
+                    <div class="mb-4">
+                        <label class="block text-gray-700 text-sm font-bold mb-2">Puzzle Title:</label>
+                        <input type="text" id="puzzleTitle" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500" placeholder="Enter puzzle title">
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-gray-700 text-sm font-bold mb-2">Description:</label>
+                        <textarea id="puzzleDescription" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 h-24" placeholder="Describe the puzzle objective"></textarea>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-gray-700 text-sm font-bold mb-2">First Move:</label>
+                        <select id="firstMove" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500">
+                            <option value="white">White to move</option>
+                            <option value="black">Black to move</option>
+                        </select>
+                    </div>
+                    <div class="flex space-x-4">
+                        <button onclick="savePuzzle()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-lg transition duration-200">Save Puzzle</button>
+                        <button onclick="clearBoard()" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded-lg transition duration-200">Clear Board</button>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="text-lg font-semibold mb-4">Setup Chess Board</h3>
+                    
+                    <!-- Black Pieces Bank -->
+                    <div class="mb-4">
+                        <h4 class="text-sm font-semibold mb-2">Black Pieces:</h4>
+                        <div class="piece-bank">
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♛')">♛</div>
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♜')">♜</div>
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♝')">♝</div>
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♞')">♞</div>
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♟')">♟</div>
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♚')">♚</div>
+                        </div>
+                    </div>
+
+                    <!-- Chess Board -->
+                    <div class="chess-board-container mb-4">
+                        <div id="createBoard"></div>
+                    </div>
+
+                    <!-- White Pieces Bank -->
+                    <div class="mb-4">
+                        <h4 class="text-sm font-semibold mb-2">White Pieces:</h4>
+                        <div class="piece-bank">
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♕')">♕</div>
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♖')">♖</div>
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♗')">♗</div>
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♘')">♘</div>
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♙')">♙</div>
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♔')">♔</div>
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('❌')" style="color: red;">❌</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- View Puzzles Section -->
+    <div id="puzzlesSection" class="max-w-6xl mx-auto p-6">
+        <h2 class="text-3xl font-bold text-gray-800 mb-6">Available Puzzles</h2>
+        <div id="puzzlesList" class="space-y-6"></div>
+    </div>
+
+    <!-- Results Section -->
+    <div id="resultsSection" class="max-w-6xl mx-auto p-6 hidden">
+        <h2 class="text-3xl font-bold text-gray-800 mb-6">Puzzle Results</h2>
+        <div id="resultsList" class="space-y-6"></div>
+    </div>
+
+    <!-- Solve Puzzle Modal -->
+    <div id="solveModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white p-6 rounded-lg shadow-xl max-w-5xl w-full mx-4 max-h-[95vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-6">
+                <h3 id="solvePuzzleTitle" class="text-2xl font-bold text-gray-800"></h3>
+                <button onclick="closeSolveModal()" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+            </div>
+            
+            <!-- Main content area -->
+            <div class="flex flex-col items-center">
+                <!-- Chess board -->
+                <div id="solveBoard" class="inline-block border-2 border-gray-800 mb-6"></div>
+                
+                <!-- Description below board -->
+                <div class="w-full max-w-2xl mb-6">
+                    <h4 class="text-lg font-semibold mb-3 text-center">Puzzle Description</h4>
+                    <div id="solvePuzzleDescription" class="bg-gray-50 p-4 rounded-lg text-center"></div>
+                </div>
+                
+                <!-- Two column layout for notations and guide -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full max-w-4xl">
+                    <div>
+                        <h4 class="text-lg font-semibold mb-2">Move Notations</h4>
+                        <div id="notationsBox" class="bg-gray-100 p-4 rounded-lg h-32 overflow-y-auto text-sm font-mono mb-4"></div>
+                        <div class="flex space-x-4 justify-center">
+                            <button onclick="submitSolution()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Submit Solution</button>
+                            <button onclick="resetPuzzle()" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Reset</button>
+                        </div>
+                    </div>
+                    <div>
+                        <h4 class="text-lg font-semibold mb-2">Chess Notation Guide</h4>
+                        <div class="text-sm text-gray-600 bg-blue-50 p-4 rounded-lg">
+                            <ul class="space-y-1">
+                                <li>• <strong>K</strong>=King, <strong>Q</strong>=Queen, <strong>R</strong>=Rook, <strong>B</strong>=Bishop, <strong>N</strong>=Knight</li>
+                                <li>• <strong>+</strong> = Check, <strong>#</strong> = Checkmate</li>
+                                <li>• <strong>O-O</strong> = Kingside castling, <strong>O-O-O</strong> = Queenside castling</li>
+                                <li>• <strong>x</strong> = Capture, <strong>=</strong> = Promotion</li>
+                                <li>• <strong>e.p.</strong> = En passant capture</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Success Modal -->
+    <div id="successModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white p-8 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div class="text-center">
+                <div class="text-green-500 text-6xl mb-4">✓</div>
+                <h3 class="text-2xl font-bold text-gray-800 mb-4">Success!</h3>
+                <p class="text-gray-600 mb-6">Your result has been submitted successfully!</p>
+                <button onclick="closeSuccessModal()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg transition duration-200">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Password Modal -->
+    <div id="passwordModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white p-8 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Admin Access Required</h2>
+            <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2">Enter Password:</label>
+                <div class="relative">
+                    <input type="password" id="adminPassword" class="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500" placeholder="Enter admin password">
+                    <button type="button" onclick="togglePasswordVisibility()" class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600">
+                        <svg id="eyeIcon" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                        <svg id="eyeOffIcon" class="h-5 w-5 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div id="passwordError" class="text-red-500 text-sm mb-4 hidden">Incorrect password. Please try again.</div>
+            <div class="flex space-x-4">
+                <button onclick="verifyPassword()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Access</button>
+                <button onclick="closePasswordModal()" class="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let currentUserName = '';
+        let usedNamesToday = JSON.parse(localStorage.getItem('usedNamesToday') || '{}');
+        let puzzles = JSON.parse(localStorage.getItem('chessPuzzles') || '[]');
+        let results = JSON.parse(localStorage.getItem('chessResults') || '{}');
+        let selectedPiece = null;
+        let selectedSquare = null;
+        let currentTurn = 'white';
+        let gameBoard = [];
+        let moveHistory = [];
+        let currentPuzzleId = null;
+        let selectedBankPiece = null;
+        let castlingRights = { whiteKing: true, whiteQueenside: true, blackKing: true, blackQueenside: true };
+        let enPassantTarget = null;
+        let isAuthorized = false;
+        let gameEnded = false;
+        const adminPassword = 'chessclub@rkv';
+
+        // Chess piece mappings
+        const pieceSymbols = {
+            'K': '♔', 'Q': '♕', 'R': '♖', 'B': '♗', 'N': '♘', 'P': '♙',
+            'k': '♚', 'q': '♛', 'r': '♜', 'b': '♝', 'n': '♞', 'p': '♟'
+        };
+
+        const initialBoard = [
+            ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'],
+            ['p', 'p', 'p', 'p', 'p', 'p', 'p', 'p'],
+            ['', '', '', '', '', '', '', ''],
+            ['', '', '', '', '', '', '', ''],
+            ['', '', '', '', '', '', '', ''],
+            ['', '', '', '', '', '', '', ''],
+            ['P', 'P', 'P', 'P', 'P', 'P', 'P', 'P'],
+            ['R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R']
+        ];
+
+        // Check if name was used today
+        function isNameUsedToday(name) {
+            const today = new Date().toDateString();
+            return usedNamesToday[today] && usedNamesToday[today].includes(name);
+        }
+
+        // Add name to today's used names
+        function addNameToToday(name) {
+            const today = new Date().toDateString();
+            if (!usedNamesToday[today]) {
+                usedNamesToday[today] = [];
+            }
+            usedNamesToday[today].push(name);
+            localStorage.setItem('usedNamesToday', JSON.stringify(usedNamesToday));
+        }
+
+        // Enter site function
+        function enterSite() {
+            const name = document.getElementById('userName').value.trim();
+            if (!name) {
+                alert('Please enter your name');
+                return;
+            }
+            
+            if (isNameUsedToday(name)) {
+                document.getElementById('nameError').classList.remove('hidden');
+                return;
+            }
+
+            currentUserName = name;
+            addNameToToday(name);
+            document.getElementById('currentUser').textContent = name;
+            document.getElementById('loginModal').classList.add('hidden');
+            showSection('puzzles');
+        }
+
+        // Show section function
+        function showSection(section) {
+            // Check if admin access is required
+            if ((section === 'create' || section === 'results') && !isAuthorized) {
+                document.getElementById('passwordModal').classList.remove('hidden');
+                document.getElementById('passwordModal').setAttribute('data-target-section', section);
+                return;
+            }
+
+            document.getElementById('createSection').classList.add('hidden');
+            document.getElementById('puzzlesSection').classList.add('hidden');
+            document.getElementById('resultsSection').classList.add('hidden');
+            
+            document.getElementById(section + 'Section').classList.remove('hidden');
+            
+            if (section === 'create') {
+                gameBoard = JSON.parse(JSON.stringify(initialBoard));
+                initializeCreateBoard();
+            } else if (section === 'puzzles') {
+                displayPuzzles();
+            } else if (section === 'results') {
+                displayResults();
+            }
+        }
+
+        // Initialize create board
+        function initializeCreateBoard() {
+            const boardContainer = document.getElementById('createBoard');
+            boardContainer.innerHTML = '';
+            
+            // Create wrapper div for board and labels
+            const wrapper = document.createElement('div');
+            wrapper.style.display = 'inline-block';
+            wrapper.style.position = 'relative';
+            
+            // Create file labels at top
+            const topLabels = document.createElement('div');
+            topLabels.style.display = 'flex';
+            topLabels.style.marginLeft = '20px';
+            topLabels.style.marginBottom = '2px';
+            for (let col = 0; col < 8; col++) {
+                const label = document.createElement('div');
+                label.className = 'file-label';
+                label.textContent = String.fromCharCode(97 + col);
+                topLabels.appendChild(label);
+            }
+            wrapper.appendChild(topLabels);
+            
+            // Create main board container
+            const boardDiv = document.createElement('div');
+            boardDiv.style.display = 'flex';
+            
+            // Create left rank labels
+            const leftLabels = document.createElement('div');
+            leftLabels.style.display = 'flex';
+            leftLabels.style.flexDirection = 'column';
+            leftLabels.style.marginRight = '2px';
+            for (let row = 0; row < 8; row++) {
+                const label = document.createElement('div');
+                label.className = 'rank-label';
+                label.textContent = (8 - row).toString();
+                leftLabels.appendChild(label);
+            }
+            boardDiv.appendChild(leftLabels);
+            
+            // Create the actual chess board
+            const board = document.createElement('div');
+            board.style.display = 'grid';
+            board.style.gridTemplateColumns = 'repeat(8, 60px)';
+            board.style.gridTemplateRows = 'repeat(8, 60px)';
+            board.style.border = '2px solid #333';
+            
+            for (let row = 0; row < 8; row++) {
+                for (let col = 0; col < 8; col++) {
+                    const square = document.createElement('div');
+                    square.className = `chess-square ${(row + col) % 2 === 0 ? 'light-square' : 'dark-square'}`;
+                    square.onclick = () => handleCreateSquareClick(row, col);
+                    square.textContent = pieceSymbols[gameBoard[row][col]] || '';
+                    square.id = `create-square-${row}-${col}`;
+                    board.appendChild(square);
+                }
+            }
+            boardDiv.appendChild(board);
+            wrapper.appendChild(boardDiv);
+            
+            // Create file labels at bottom
+            const bottomLabels = document.createElement('div');
+            bottomLabels.style.display = 'flex';
+            bottomLabels.style.marginLeft = '20px';
+            bottomLabels.style.marginTop = '2px';
+            for (let col = 0; col < 8; col++) {
+                const label = document.createElement('div');
+                label.className = 'file-label';
+                label.textContent = String.fromCharCode(97 + col);
+                bottomLabels.appendChild(label);
+            }
+            wrapper.appendChild(bottomLabels);
+            
+            boardContainer.appendChild(wrapper);
+        }
+
+        // Handle create square click
+        function handleCreateSquareClick(row, col) {
+            if (selectedBankPiece) {
+                if (selectedBankPiece === '❌') {
+                    gameBoard[row][col] = '';
+                } else {
+                    // Convert symbol back to letter
+                    const pieceMap = {
+                        '♔': 'K', '♕': 'Q', '♖': 'R', '♗': 'B', '♘': 'N', '♙': 'P',
+                        '♚': 'k', '♛': 'q', '♜': 'r', '♝': 'b', '♞': 'n', '♟': 'p'
+                    };
+                    gameBoard[row][col] = pieceMap[selectedBankPiece] || '';
+                }
+                
+                // Update the specific square
+                const square = document.getElementById(`create-square-${row}-${col}`);
+                if (square) {
+                    square.textContent = selectedBankPiece === '❌' ? '' : selectedBankPiece;
+                }
+                
+                // Clear selection visual feedback
+                document.querySelectorAll('.piece-bank-item').forEach(item => {
+                    item.style.backgroundColor = 'white';
+                    item.style.borderColor = '#ddd';
+                });
+                
+                selectedBankPiece = null;
+            }
+        }
+
+        // Select piece from bank
+        function selectPieceFromBank(piece) {
+            selectedBankPiece = piece;
+            
+            // Clear previous selection
+            document.querySelectorAll('.piece-bank-item').forEach(item => {
+                item.style.backgroundColor = 'white';
+                item.style.borderColor = '#ddd';
+            });
+            
+            // Highlight selected piece
+            event.target.style.backgroundColor = '#e3f2fd';
+            event.target.style.borderColor = '#2196f3';
+        }
+
+        // Clear board function
+        function clearBoard() {
+            // Create empty board
+            gameBoard = Array(8).fill().map(() => Array(8).fill(''));
+            
+            // Update all squares to be empty
+            for (let row = 0; row < 8; row++) {
+                for (let col = 0; col < 8; col++) {
+                    const square = document.getElementById(`create-square-${row}-${col}`);
+                    if (square) {
+                        square.textContent = '';
+                    }
+                }
+            }
+            
+            // Clear any selected piece from bank
+            selectedBankPiece = null;
+            document.querySelectorAll('.piece-bank-item').forEach(item => {
+                item.style.backgroundColor = 'white';
+                item.style.borderColor = '#ddd';
+            });
+        }
+
+        // Save puzzle
+        function savePuzzle() {
+            const title = document.getElementById('puzzleTitle').value.trim();
+            const description = document.getElementById('puzzleDescription').value.trim();
+            const firstMove = document.getElementById('firstMove').value;
+            
+            if (!title || !description) {
+                alert('Please fill in both title and description');
+                return;
+            }
+
+            const puzzle = {
+                id: Date.now(),
+                title: title,
+                description: description,
+                board: JSON.parse(JSON.stringify(gameBoard)),
+                firstMove: firstMove,
+                createdBy: currentUserName,
+                createdAt: new Date().toISOString()
+            };
+
+            puzzles.push(puzzle);
+            localStorage.setItem('chessPuzzles', JSON.stringify(puzzles));
+            
+            document.getElementById('puzzleTitle').value = '';
+            document.getElementById('puzzleDescription').value = '';
+            document.getElementById('firstMove').value = 'white';
+            
+            alert('Puzzle saved successfully!');
+            
+            showSection('puzzles');
+        }
+
+        // Display puzzles
+        function displayPuzzles() {
+            const puzzlesList = document.getElementById('puzzlesList');
+            puzzlesList.innerHTML = '';
+
+            if (puzzles.length === 0) {
+                puzzlesList.innerHTML = '<div class="text-center text-gray-500 py-8">No puzzles available yet. Create the first one!</div>';
+                return;
+            }
+
+            puzzles.forEach(puzzle => {
+                const puzzleCard = document.createElement('div');
+                puzzleCard.className = 'bg-white rounded-lg shadow-lg p-6';
+                const firstMoveText = puzzle.firstMove === 'white' ? 'White to move' : 'Black to move';
+                const firstMoveColor = puzzle.firstMove === 'white' ? 'text-blue-600' : 'text-gray-800';
+                
+                puzzleCard.innerHTML = `
+                    <div class="flex justify-between items-start mb-4">
+                        <h3 class="text-xl font-bold text-gray-800">${puzzle.title}</h3>
+                        <span class="text-sm text-gray-500">${new Date(puzzle.createdAt).toLocaleDateString()}</span>
+                    </div>
+                    <p class="text-gray-600 mb-3">${puzzle.description}</p>
+                    <div class="mb-4">
+                        <span class="inline-block px-3 py-1 text-sm font-semibold ${firstMoveColor} bg-gray-100 rounded-full">
+                            ${firstMoveText}
+                        </span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-500">Created by: ${puzzle.createdBy}</span>
+                        <button onclick="solvePuzzle(${puzzle.id})" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Solve Puzzle</button>
+                    </div>
+                `;
+                puzzlesList.appendChild(puzzleCard);
+            });
+        }
+
+        // Solve puzzle
+        function solvePuzzle(puzzleId) {
+            const puzzle = puzzles.find(p => p.id === puzzleId);
+            if (!puzzle) return;
+
+            currentPuzzleId = puzzleId;
+            gameBoard = JSON.parse(JSON.stringify(puzzle.board));
+            moveHistory = [];
+            currentTurn = puzzle.firstMove || 'white';
+            gameEnded = false;
+            
+            document.getElementById('solvePuzzleTitle').textContent = puzzle.title;
+            document.getElementById('solvePuzzleDescription').textContent = puzzle.description;
+            document.getElementById('notationsBox').innerHTML = '';
+            
+            initializeSolveBoard();
+            highlightKingInCheck();
+            document.getElementById('solveModal').classList.remove('hidden');
+        }
+
+        // Initialize solve board
+        function initializeSolveBoard() {
+            const boardContainer = document.getElementById('solveBoard');
+            boardContainer.innerHTML = '';
+            
+            // Create wrapper div for board and labels
+            const wrapper = document.createElement('div');
+            wrapper.style.display = 'inline-block';
+            wrapper.style.position = 'relative';
+            
+            // Create file labels at top
+            const topLabels = document.createElement('div');
+            topLabels.style.display = 'flex';
+            topLabels.style.marginLeft = '20px';
+            topLabels.style.marginBottom = '2px';
+            for (let col = 0; col < 8; col++) {
+                const label = document.createElement('div');
+                label.className = 'file-label';
+                label.textContent = String.fromCharCode(97 + col);
+                topLabels.appendChild(label);
+            }
+            wrapper.appendChild(topLabels);
+            
+            // Create main board container
+            const boardDiv = document.createElement('div');
+            boardDiv.style.display = 'flex';
+            
+            // Create left rank labels
+            const leftLabels = document.createElement('div');
+            leftLabels.style.display = 'flex';
+            leftLabels.style.flexDirection = 'column';
+            leftLabels.style.marginRight = '2px';
+            for (let row = 0; row < 8; row++) {
+                const label = document.createElement('div');
+                label.className = 'rank-label';
+                label.textContent = (8 - row).toString();
+                leftLabels.appendChild(label);
+            }
+            boardDiv.appendChild(leftLabels);
+            
+            // Create the actual chess board
+            const board = document.createElement('div');
+            board.style.display = 'grid';
+            board.style.gridTemplateColumns = 'repeat(8, 60px)';
+            board.style.gridTemplateRows = 'repeat(8, 60px)';
+            board.style.border = '2px solid #333';
+            
+            for (let row = 0; row < 8; row++) {
+                for (let col = 0; col < 8; col++) {
+                    const square = document.createElement('div');
+                    square.className = `chess-square ${(row + col) % 2 === 0 ? 'light-square' : 'dark-square'}`;
+                    square.onclick = () => handleSquareClick(row, col);
+                    square.textContent = pieceSymbols[gameBoard[row][col]] || '';
+                    square.id = `square-${row}-${col}`;
+                    board.appendChild(square);
+                }
+            }
+            boardDiv.appendChild(board);
+            wrapper.appendChild(boardDiv);
+            
+            // Create file labels at bottom
+            const bottomLabels = document.createElement('div');
+            bottomLabels.style.display = 'flex';
+            bottomLabels.style.marginLeft = '20px';
+            bottomLabels.style.marginTop = '2px';
+            for (let col = 0; col < 8; col++) {
+                const label = document.createElement('div');
+                label.className = 'file-label';
+                label.textContent = String.fromCharCode(97 + col);
+                bottomLabels.appendChild(label);
+            }
+            wrapper.appendChild(bottomLabels);
+            
+            boardContainer.appendChild(wrapper);
+        }
+
+        // Handle square click
+        function handleSquareClick(row, col) {
+            const piece = gameBoard[row][col];
+            
+            if (selectedSquare) {
+                // Try to move
+                if (isValidMove(selectedSquare.row, selectedSquare.col, row, col)) {
+                    makeMove(selectedSquare.row, selectedSquare.col, row, col);
+                }
+                clearSelection();
+            } else if (piece && isPieceColor(piece, currentTurn)) {
+                // Select piece
+                selectedSquare = { row, col };
+                document.getElementById(`square-${row}-${col}`).classList.add('selected');
+                showPossibleMoves(row, col);
+            }
+        }
+
+        // Check if piece belongs to current player
+        function isPieceColor(piece, color) {
+            if (color === 'white') {
+                return piece === piece.toUpperCase();
+            } else {
+                return piece === piece.toLowerCase();
+            }
+        }
+
+        // Show possible moves
+        function showPossibleMoves(row, col) {
+            const piece = gameBoard[row][col].toLowerCase();
+            
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    if (isValidMove(row, col, r, c)) {
+                        document.getElementById(`square-${r}-${c}`).classList.add('possible-move');
+                    }
+                }
+            }
+        }
+
+        // Clear selection
+        function clearSelection() {
+            if (selectedSquare) {
+                document.getElementById(`square-${selectedSquare.row}-${selectedSquare.col}`).classList.remove('selected');
+            }
+            selectedSquare = null;
+            
+            // Clear possible moves
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    document.getElementById(`square-${r}-${c}`).classList.remove('possible-move');
+                }
+            }
+        }
+
+        // Validate move with castling and en passant
+        function isValidMove(fromRow, fromCol, toRow, toCol) {
+            if (fromRow === toRow && fromCol === toCol) return false;
+            if (gameEnded) return false;
+            
+            const piece = gameBoard[fromRow][fromCol].toLowerCase();
+            const targetPiece = gameBoard[toRow][toCol];
+            
+            // Can't capture own piece
+            if (targetPiece && isPieceColor(targetPiece, currentTurn)) return false;
+            
+            // If in check, only allow moves that get out of check
+            if (isInCheck(currentTurn)) {
+                const originalPiece = gameBoard[toRow][toCol];
+                gameBoard[toRow][toCol] = gameBoard[fromRow][fromCol];
+                gameBoard[fromRow][fromCol] = '';
+                
+                const stillInCheck = isInCheck(currentTurn);
+                
+                // Restore board
+                gameBoard[fromRow][fromCol] = gameBoard[toRow][toCol];
+                gameBoard[toRow][toCol] = originalPiece;
+                
+                if (stillInCheck) return false;
+            }
+            
+            const rowDiff = Math.abs(toRow - fromRow);
+            const colDiff = Math.abs(toCol - fromCol);
+            
+            switch (piece) {
+                case 'p': // Pawn
+                    const direction = isPieceColor(gameBoard[fromRow][fromCol], 'white') ? -1 : 1;
+                    const startRow = isPieceColor(gameBoard[fromRow][fromCol], 'white') ? 6 : 1;
+                    
+                    if (colDiff === 0) { // Forward move
+                        if (targetPiece) return false; // Can't capture forward
+                        if (toRow === fromRow + direction) return true;
+                        if (fromRow === startRow && toRow === fromRow + 2 * direction && !gameBoard[fromRow + direction][fromCol]) return true;
+                    } else if (colDiff === 1 && toRow === fromRow + direction) { // Diagonal capture or en passant
+                        if (targetPiece !== '') return true; // Regular capture
+                        // En passant
+                        if (enPassantTarget && enPassantTarget.row === toRow && enPassantTarget.col === toCol) {
+                            return true;
+                        }
+                    }
+                    return false;
+                    
+                case 'r': // Rook
+                    if (rowDiff === 0 || colDiff === 0) {
+                        return isPathClear(fromRow, fromCol, toRow, toCol);
+                    }
+                    return false;
+                    
+                case 'n': // Knight
+                    return (rowDiff === 2 && colDiff === 1) || (rowDiff === 1 && colDiff === 2);
+                    
+                case 'b': // Bishop
+                    if (rowDiff === colDiff) {
+                        return isPathClear(fromRow, fromCol, toRow, toCol);
+                    }
+                    return false;
+                    
+                case 'q': // Queen
+                    if (rowDiff === 0 || colDiff === 0 || rowDiff === colDiff) {
+                        return isPathClear(fromRow, fromCol, toRow, toCol);
+                    }
+                    return false;
+                    
+                case 'k': // King
+                    if (rowDiff <= 1 && colDiff <= 1) return true;
+                    
+                    // Castling
+                    if (rowDiff === 0 && colDiff === 2) {
+                        const isWhite = isPieceColor(gameBoard[fromRow][fromCol], 'white');
+                        const kingRow = isWhite ? 7 : 0;
+                        
+                        if (fromRow !== kingRow) return false;
+                        
+                        // Kingside castling
+                        if (toCol === 6) {
+                            if (isWhite && !castlingRights.whiteKing) return false;
+                            if (!isWhite && !castlingRights.blackKing) return false;
+                            
+                            // Check if path is clear and king/rook haven't moved
+                            if (gameBoard[kingRow][7] === (isWhite ? 'R' : 'r') && 
+                                isPathClear(fromRow, fromCol, fromRow, 7)) {
+                                return !isInCheck(currentTurn) && 
+                                       !wouldBeInCheck(fromRow, fromCol, fromRow, fromCol + 1) &&
+                                       !wouldBeInCheck(fromRow, fromCol, fromRow, fromCol + 2);
+                            }
+                        }
+                        
+                        // Queenside castling
+                        if (toCol === 2) {
+                            if (isWhite && !castlingRights.whiteQueenside) return false;
+                            if (!isWhite && !castlingRights.blackQueenside) return false;
+                            
+                            if (gameBoard[kingRow][0] === (isWhite ? 'R' : 'r') && 
+                                isPathClear(fromRow, fromCol, fromRow, 0)) {
+                                return !isInCheck(currentTurn) && 
+                                       !wouldBeInCheck(fromRow, fromCol, fromRow, fromCol - 1) &&
+                                       !wouldBeInCheck(fromRow, fromCol, fromRow, fromCol - 2);
+                            }
+                        }
+                    }
+                    return false;
+                    
+                default:
+                    return false;
+            }
+        }
+
+        // Check if path is clear
+        function isPathClear(fromRow, fromCol, toRow, toCol) {
+            const rowStep = toRow > fromRow ? 1 : toRow < fromRow ? -1 : 0;
+            const colStep = toCol > fromCol ? 1 : toCol < fromCol ? -1 : 0;
+            
+            let currentRow = fromRow + rowStep;
+            let currentCol = fromCol + colStep;
+            
+            while (currentRow !== toRow || currentCol !== toCol) {
+                if (gameBoard[currentRow][currentCol] !== '') return false;
+                currentRow += rowStep;
+                currentCol += colStep;
+            }
+            
+            return true;
+        }
+
+        // Make move
+        function makeMove(fromRow, fromCol, toRow, toCol) {
+            const piece = gameBoard[fromRow][fromCol];
+            const capturedPiece = gameBoard[toRow][toCol];
+            let specialMove = '';
+            
+            // Handle en passant capture
+            if (piece.toLowerCase() === 'p' && enPassantTarget && 
+                enPassantTarget.row === toRow && enPassantTarget.col === toCol) {
+                const capturedPawnRow = isPieceColor(piece, 'white') ? toRow + 1 : toRow - 1;
+                gameBoard[capturedPawnRow][toCol] = '';
+                specialMove = 'enpassant';
+            }
+            
+            // Handle castling
+            if (piece.toLowerCase() === 'k' && Math.abs(toCol - fromCol) === 2) {
+                const isKingside = toCol > fromCol;
+                const rookFromCol = isKingside ? 7 : 0;
+                const rookToCol = isKingside ? 5 : 3;
+                const rook = gameBoard[fromRow][rookFromCol];
+                
+                gameBoard[fromRow][rookToCol] = rook;
+                gameBoard[fromRow][rookFromCol] = '';
+                specialMove = isKingside ? 'castleKing' : 'castleQueen';
+            }
+            
+            // Make the move
+            gameBoard[toRow][toCol] = piece;
+            gameBoard[fromRow][fromCol] = '';
+            
+            // Update castling rights
+            if (piece.toLowerCase() === 'k') {
+                if (isPieceColor(piece, 'white')) {
+                    castlingRights.whiteKing = false;
+                    castlingRights.whiteQueenside = false;
+                } else {
+                    castlingRights.blackKing = false;
+                    castlingRights.blackQueenside = false;
+                }
+            }
+            
+            if (piece.toLowerCase() === 'r') {
+                if (isPieceColor(piece, 'white')) {
+                    if (fromCol === 0) castlingRights.whiteQueenside = false;
+                    if (fromCol === 7) castlingRights.whiteKing = false;
+                } else {
+                    if (fromCol === 0) castlingRights.blackQueenside = false;
+                    if (fromCol === 7) castlingRights.blackKing = false;
+                }
+            }
+            
+            // Set en passant target for pawn double moves
+            enPassantTarget = null;
+            if (piece.toLowerCase() === 'p' && Math.abs(toRow - fromRow) === 2) {
+                enPassantTarget = {
+                    row: isPieceColor(piece, 'white') ? fromRow - 1 : fromRow + 1,
+                    col: fromCol
+                };
+            }
+            
+            // Generate notation
+            const notation = generateNotation(piece, fromRow, fromCol, toRow, toCol, capturedPiece, specialMove);
+            moveHistory.push(notation);
+            
+            // Update display
+            initializeSolveBoard();
+            updateNotations();
+            
+            // Switch turns
+            currentTurn = currentTurn === 'white' ? 'black' : 'white';
+            
+            // Check for checkmate after the move
+            const opponentColor = currentTurn === 'white' ? 'black' : 'white';
+            if (isInCheck(opponentColor) && isCheckmate(opponentColor)) {
+                gameEnded = true;
+                // Update the notation to include checkmate symbol if not already there
+                if (!moveHistory[moveHistory.length - 1].includes('#')) {
+                    moveHistory[moveHistory.length - 1] = moveHistory[moveHistory.length - 1].replace('+', '#');
+                    updateNotations();
+                }
+                setTimeout(() => {
+                    alert(`Checkmate! ${currentTurn === 'white' ? 'White' : 'Black'} wins!`);
+                }, 100);
+            }
+            
+            // Highlight king if in check
+            highlightKingInCheck();
+        }
+
+        // Generate chess notation
+        function generateNotation(piece, fromRow, fromCol, toRow, toCol, capturedPiece, specialMove) {
+            const files = 'abcdefgh';
+            const ranks = '87654321';
+            
+            let notation = '';
+            
+            // Handle castling
+            if (specialMove === 'castleKing') {
+                notation = 'O-O';
+            } else if (specialMove === 'castleQueen') {
+                notation = 'O-O-O';
+            } else {
+                const pieceType = piece.toUpperCase();
+                
+                if (pieceType !== 'P') {
+                    notation += pieceType;
+                }
+                
+                if (capturedPiece || specialMove === 'enpassant') {
+                    if (pieceType === 'P') {
+                        notation += files[fromCol];
+                    }
+                    notation += 'x';
+                }
+                
+                notation += files[toCol] + ranks[toRow];
+                
+                // Add en passant notation
+                if (specialMove === 'enpassant') {
+                    notation += ' e.p.';
+                }
+            }
+            
+            // Check for check (checkmate will be handled after the move is made)
+            const opponentColor = currentTurn === 'white' ? 'black' : 'white';
+            if (isInCheck(opponentColor)) {
+                notation += '+';
+            }
+            
+            return notation;
+        }
+
+        // Helper function to check if a move would put king in check
+        function wouldBeInCheck(fromRow, fromCol, toRow, toCol) {
+            const originalPiece = gameBoard[toRow][toCol];
+            const movingPiece = gameBoard[fromRow][fromCol];
+            
+            // Make temporary move
+            gameBoard[toRow][toCol] = movingPiece;
+            gameBoard[fromRow][fromCol] = '';
+            
+            const inCheck = isInCheck(currentTurn);
+            
+            // Restore board
+            gameBoard[fromRow][fromCol] = movingPiece;
+            gameBoard[toRow][toCol] = originalPiece;
+            
+            return inCheck;
+        }
+
+        // Simple check detection
+        function isInCheck(color) {
+            // Find king
+            let kingRow = -1, kingCol = -1;
+            const kingSymbol = color === 'white' ? 'K' : 'k';
+            
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    if (gameBoard[r][c] === kingSymbol) {
+                        kingRow = r;
+                        kingCol = c;
+                        break;
+                    }
+                }
+                if (kingRow !== -1) break;
+            }
+            
+            if (kingRow === -1) return false;
+            
+            // Check if any opponent piece can attack the king
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const piece = gameBoard[r][c];
+                    if (piece && !isPieceColor(piece, color)) {
+                        // Temporarily disable castling and en passant for attack checking
+                        const tempEnPassant = enPassantTarget;
+                        enPassantTarget = null;
+                        
+                        if (canPieceAttack(r, c, kingRow, kingCol)) {
+                            enPassantTarget = tempEnPassant;
+                            return true;
+                        }
+                        
+                        enPassantTarget = tempEnPassant;
+                    }
+                }
+            }
+            
+            return false;
+        }
+
+        // Check if piece can attack a square (without special moves)
+        function canPieceAttack(fromRow, fromCol, toRow, toCol) {
+            const piece = gameBoard[fromRow][fromCol].toLowerCase();
+            const rowDiff = Math.abs(toRow - fromRow);
+            const colDiff = Math.abs(toCol - fromCol);
+            
+            switch (piece) {
+                case 'p':
+                    const direction = isPieceColor(gameBoard[fromRow][fromCol], 'white') ? -1 : 1;
+                    return colDiff === 1 && toRow === fromRow + direction;
+                case 'r':
+                    return (rowDiff === 0 || colDiff === 0) && isPathClear(fromRow, fromCol, toRow, toCol);
+                case 'n':
+                    return (rowDiff === 2 && colDiff === 1) || (rowDiff === 1 && colDiff === 2);
+                case 'b':
+                    return rowDiff === colDiff && isPathClear(fromRow, fromCol, toRow, toCol);
+                case 'q':
+                    return (rowDiff === 0 || colDiff === 0 || rowDiff === colDiff) && isPathClear(fromRow, fromCol, toRow, toCol);
+                case 'k':
+                    return rowDiff <= 1 && colDiff <= 1;
+                default:
+                    return false;
+            }
+        }
+
+        // Check if it's checkmate
+        function isCheckmate(color) {
+            if (!isInCheck(color)) return false;
+            
+            // Try all possible moves for the color in check
+            for (let fromRow = 0; fromRow < 8; fromRow++) {
+                for (let fromCol = 0; fromCol < 8; fromCol++) {
+                    const piece = gameBoard[fromRow][fromCol];
+                    if (piece && isPieceColor(piece, color)) {
+                        // Try all possible destination squares
+                        for (let toRow = 0; toRow < 8; toRow++) {
+                            for (let toCol = 0; toCol < 8; toCol++) {
+                                if (fromRow === toRow && fromCol === toCol) continue;
+                                
+                                // Check basic move validity first
+                                if (isBasicMoveValid(fromRow, fromCol, toRow, toCol)) {
+                                    // Make temporary move
+                                    const originalPiece = gameBoard[toRow][toCol];
+                                    const originalEnPassant = enPassantTarget;
+                                    
+                                    // Handle en passant capture in temporary move
+                                    let enPassantCaptured = null;
+                                    if (piece.toLowerCase() === 'p' && enPassantTarget && 
+                                        enPassantTarget.row === toRow && enPassantTarget.col === toCol) {
+                                        const capturedPawnRow = isPieceColor(piece, 'white') ? toRow + 1 : toRow - 1;
+                                        enPassantCaptured = gameBoard[capturedPawnRow][toCol];
+                                        gameBoard[capturedPawnRow][toCol] = '';
+                                    }
+                                    
+                                    gameBoard[toRow][toCol] = piece;
+                                    gameBoard[fromRow][fromCol] = '';
+                                    
+                                    // Check if still in check
+                                    const stillInCheck = isInCheck(color);
+                                    
+                                    // Restore board
+                                    gameBoard[fromRow][fromCol] = piece;
+                                    gameBoard[toRow][toCol] = originalPiece;
+                                    enPassantTarget = originalEnPassant;
+                                    
+                                    // Restore en passant captured pawn
+                                    if (enPassantCaptured !== null) {
+                                        const capturedPawnRow = isPieceColor(piece, 'white') ? toRow + 1 : toRow - 1;
+                                        gameBoard[capturedPawnRow][toCol] = enPassantCaptured;
+                                    }
+                                    
+                                    // If this move gets out of check, it's not checkmate
+                                    if (!stillInCheck) {
+                                        return false;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            return true; // No legal moves found, it's checkmate
+        }
+
+        // Basic move validation without check considerations
+        function isBasicMoveValid(fromRow, fromCol, toRow, toCol) {
+            if (fromRow === toRow && fromCol === toCol) return false;
+            
+            const piece = gameBoard[fromRow][fromCol].toLowerCase();
+            const targetPiece = gameBoard[toRow][toCol];
+            
+            // Can't capture own piece
+            if (targetPiece && isPieceColor(targetPiece, isPieceColor(gameBoard[fromRow][fromCol], 'white') ? 'white' : 'black')) return false;
+            
+            const rowDiff = Math.abs(toRow - fromRow);
+            const colDiff = Math.abs(toCol - fromCol);
+            
+            switch (piece) {
+                case 'p': // Pawn
+                    const direction = isPieceColor(gameBoard[fromRow][fromCol], 'white') ? -1 : 1;
+                    const startRow = isPieceColor(gameBoard[fromRow][fromCol], 'white') ? 6 : 1;
+                    
+                    if (colDiff === 0) { // Forward move
+                        if (targetPiece) return false; // Can't capture forward
+                        if (toRow === fromRow + direction) return true;
+                        if (fromRow === startRow && toRow === fromRow + 2 * direction && !gameBoard[fromRow + direction][fromCol]) return true;
+                    } else if (colDiff === 1 && toRow === fromRow + direction) { // Diagonal capture or en passant
+                        if (targetPiece !== '') return true; // Regular capture
+                        // En passant
+                        if (enPassantTarget && enPassantTarget.row === toRow && enPassantTarget.col === toCol) {
+                            return true;
+                        }
+                    }
+                    return false;
+                    
+                case 'r': // Rook
+                    if (rowDiff === 0 || colDiff === 0) {
+                        return isPathClear(fromRow, fromCol, toRow, toCol);
+                    }
+                    return false;
+                    
+                case 'n': // Knight
+                    return (rowDiff === 2 && colDiff === 1) || (rowDiff === 1 && colDiff === 2);
+                    
+                case 'b': // Bishop
+                    if (rowDiff === colDiff) {
+                        return isPathClear(fromRow, fromCol, toRow, toCol);
+                    }
+                    return false;
+                    
+                case 'q': // Queen
+                    if (rowDiff === 0 || colDiff === 0 || rowDiff === colDiff) {
+                        return isPathClear(fromRow, fromCol, toRow, toCol);
+                    }
+                    return false;
+                    
+                case 'k': // King
+                    if (rowDiff <= 1 && colDiff <= 1) return true;
+                    
+                    // Castling
+                    if (rowDiff === 0 && colDiff === 2) {
+                        const isWhite = isPieceColor(gameBoard[fromRow][fromCol], 'white');
+                        const kingRow = isWhite ? 7 : 0;
+                        
+                        if (fromRow !== kingRow) return false;
+                        
+                        // Kingside castling
+                        if (toCol === 6) {
+                            if (isWhite && !castlingRights.whiteKing) return false;
+                            if (!isWhite && !castlingRights.blackKing) return false;
+                            
+                            // Check if path is clear and king/rook haven't moved
+                            if (gameBoard[kingRow][7] === (isWhite ? 'R' : 'r') && 
+                                isPathClear(fromRow, fromCol, fromRow, 7)) {
+                                return true;
+                            }
+                        }
+                        
+                        // Queenside castling
+                        if (toCol === 2) {
+                            if (isWhite && !castlingRights.whiteQueenside) return false;
+                            if (!isWhite && !castlingRights.blackQueenside) return false;
+                            
+                            if (gameBoard[kingRow][0] === (isWhite ? 'R' : 'r') && 
+                                isPathClear(fromRow, fromCol, fromRow, 0)) {
+                                return true;
+                            }
+                        }
+                    }
+                    return false;
+                    
+                default:
+                    return false;
+            }
+        }
+
+        // Get all legal moves for current player
+        function getLegalMoves(color) {
+            const legalMoves = [];
+            
+            for (let fromRow = 0; fromRow < 8; fromRow++) {
+                for (let fromCol = 0; fromCol < 8; fromCol++) {
+                    const piece = gameBoard[fromRow][fromCol];
+                    if (piece && isPieceColor(piece, color)) {
+                        for (let toRow = 0; toRow < 8; toRow++) {
+                            for (let toCol = 0; toCol < 8; toCol++) {
+                                if (isValidMove(fromRow, fromCol, toRow, toCol)) {
+                                    // Check if move doesn't leave king in check
+                                    const originalPiece = gameBoard[toRow][toCol];
+                                    gameBoard[toRow][toCol] = piece;
+                                    gameBoard[fromRow][fromCol] = '';
+                                    
+                                    const wouldBeInCheck = isInCheck(color);
+                                    
+                                    // Restore board
+                                    gameBoard[fromRow][fromCol] = piece;
+                                    gameBoard[toRow][toCol] = originalPiece;
+                                    
+                                    if (!wouldBeInCheck) {
+                                        legalMoves.push({ fromRow, fromCol, toRow, toCol });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            return legalMoves;
+        }
+
+        // Highlight king if in check
+        function highlightKingInCheck() {
+            // Clear previous highlights
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const square = document.getElementById(`square-${r}-${c}`);
+                    if (square) {
+                        square.classList.remove('king-in-check');
+                    }
+                }
+            }
+            
+            // Highlight king if in check
+            if (isInCheck(currentTurn)) {
+                const kingSymbol = currentTurn === 'white' ? 'K' : 'k';
+                for (let r = 0; r < 8; r++) {
+                    for (let c = 0; c < 8; c++) {
+                        if (gameBoard[r][c] === kingSymbol) {
+                            const square = document.getElementById(`square-${r}-${c}`);
+                            if (square) {
+                                square.classList.add('king-in-check');
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Update notations display
+        function updateNotations() {
+            const notationsBox = document.getElementById('notationsBox');
+            notationsBox.innerHTML = moveHistory.map((move, index) => {
+                const moveNumber = Math.floor(index / 2) + 1;
+                const isWhiteMove = index % 2 === 0;
+                return isWhiteMove ? `${moveNumber}. ${move}` : ` ${move}`;
+            }).join(' ');
+            notationsBox.scrollTop = notationsBox.scrollHeight;
+        }
+
+        // Reset puzzle
+        function resetPuzzle() {
+            const puzzle = puzzles.find(p => p.id === currentPuzzleId);
+            if (puzzle) {
+                gameBoard = JSON.parse(JSON.stringify(puzzle.board));
+                moveHistory = [];
+                currentTurn = puzzle.firstMove || 'white';
+                gameEnded = false;
+                
+                // Reset special move states
+                castlingRights = { whiteKing: true, whiteQueenside: true, blackKing: true, blackQueenside: true };
+                enPassantTarget = null;
+                
+                initializeSolveBoard();
+                document.getElementById('notationsBox').innerHTML = '';
+                highlightKingInCheck();
+            }
+        }
+
+        // Submit solution
+        function submitSolution() {
+            if (!currentPuzzleId || moveHistory.length === 0) {
+                alert('Please make some moves before submitting');
+                return;
+            }
+
+            const puzzle = puzzles.find(p => p.id === currentPuzzleId);
+            if (!puzzle) return;
+
+            if (!results[currentPuzzleId]) {
+                results[currentPuzzleId] = [];
+            }
+
+            const solution = {
+                playerName: currentUserName,
+                moves: [...moveHistory],
+                submittedAt: new Date().toISOString(),
+                moveCount: moveHistory.length
+            };
+
+            results[currentPuzzleId].push(solution);
+            localStorage.setItem('chessResults', JSON.stringify(results));
+
+            closeSolveModal();
+            document.getElementById('successModal').classList.remove('hidden');
+        }
+
+        // Close solve modal
+        function closeSolveModal() {
+            document.getElementById('solveModal').classList.add('hidden');
+            clearSelection();
+        }
+
+        // Close success modal
+        function closeSuccessModal() {
+            document.getElementById('successModal').classList.add('hidden');
+        }
+
+        // Verify password
+        function verifyPassword() {
+            const enteredPassword = document.getElementById('adminPassword').value;
+            const targetSection = document.getElementById('passwordModal').getAttribute('data-target-section');
+            
+            if (enteredPassword === adminPassword) {
+                isAuthorized = true;
+                document.getElementById('passwordModal').classList.add('hidden');
+                document.getElementById('adminPassword').value = '';
+                document.getElementById('passwordError').classList.add('hidden');
+                showSection(targetSection);
+            } else {
+                document.getElementById('passwordError').classList.remove('hidden');
+                document.getElementById('adminPassword').value = '';
+            }
+        }
+
+        // Close password modal
+        function closePasswordModal() {
+            document.getElementById('passwordModal').classList.add('hidden');
+            document.getElementById('adminPassword').value = '';
+            document.getElementById('passwordError').classList.add('hidden');
+        }
+
+        // Toggle password visibility
+        function togglePasswordVisibility() {
+            const passwordInput = document.getElementById('adminPassword');
+            const eyeIcon = document.getElementById('eyeIcon');
+            const eyeOffIcon = document.getElementById('eyeOffIcon');
+            
+            if (passwordInput.type === 'password') {
+                passwordInput.type = 'text';
+                eyeIcon.classList.add('hidden');
+                eyeOffIcon.classList.remove('hidden');
+            } else {
+                passwordInput.type = 'password';
+                eyeIcon.classList.remove('hidden');
+                eyeOffIcon.classList.add('hidden');
+            }
+        }
+
+        // Handle Enter key in password field
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('adminPassword').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    verifyPassword();
+                }
+            });
+        });
+
+        // Display results
+        function displayResults() {
+            const resultsList = document.getElementById('resultsList');
+            resultsList.innerHTML = '';
+
+            if (Object.keys(results).length === 0) {
+                resultsList.innerHTML = '<div class="text-center text-gray-500 py-8">No results available yet.</div>';
+                return;
+            }
+
+            Object.keys(results).forEach(puzzleId => {
+                const puzzle = puzzles.find(p => p.id == puzzleId);
+                if (!puzzle) return;
+
+                const puzzleResults = results[puzzleId];
+                
+                const resultCard = document.createElement('div');
+                resultCard.className = 'bg-white rounded-lg shadow-lg p-6';
+                
+                let resultsHtml = `
+                    <h3 class="text-xl font-bold text-gray-800 mb-4">${puzzle.title}</h3>
+                    <div class="space-y-3">
+                `;
+
+                puzzleResults.forEach(result => {
+                    resultsHtml += `
+                        <div class="border-l-4 border-blue-500 pl-4 py-2">
+                            <div class="flex justify-between items-center">
+                                <span class="font-semibold text-gray-800">${result.playerName}</span>
+                                <span class="text-sm text-gray-500">${new Date(result.submittedAt).toLocaleString()}</span>
+                            </div>
+                            <div class="text-sm text-gray-600 mt-1">
+                                Moves: ${result.moveCount} | Solution: ${result.moves.join(' ')}
+                            </div>
+                        </div>
+                    `;
+                });
+
+                resultsHtml += '</div>';
+                resultCard.innerHTML = resultsHtml;
+                resultsList.appendChild(resultCard);
+            });
+        }
+
+
+
+        // Initialize on page load
+        window.onload = function() {
+            // Clean up old names (keep only today's)
+            const today = new Date().toDateString();
+            const cleanedNames = {};
+            if (usedNamesToday[today]) {
+                cleanedNames[today] = usedNamesToday[today];
+            }
+            usedNamesToday = cleanedNames;
+            localStorage.setItem('usedNamesToday', JSON.stringify(usedNamesToday));
+        };
+    </script>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'96599815b2c96ee0',t:'MTc1MzU5MjY0Ni4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
