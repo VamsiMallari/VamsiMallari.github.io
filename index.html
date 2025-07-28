@@ -565,10 +565,9 @@
             try {
                 console.log('Initializing Chess Puzzles Hub with Firebase...');
                 
-                // Load all data from Firestore
+                // Load only puzzles and user names on startup
                 await Promise.all([
                     loadPuzzlesFromFirestore(),
-                    loadResultsFromFirestore(),
                     loadUserNamesFromFirestore()
                 ]);
                 
@@ -597,6 +596,20 @@
                 document.getElementById('loginModal').classList.remove('hidden');
             }
         };
+
+        // Load and display results (only when admin accesses results section)
+        async function loadAndDisplayResults() {
+            try {
+                // Load results from Firestore
+                await loadResultsFromFirestore();
+                displayResults();
+            } catch (error) {
+                console.error('Error loading results:', error);
+                // Fallback to localStorage
+                results = JSON.parse(localStorage.getItem('chessResults') || '{}');
+                displayResults();
+            }
+        }
         let puzzleStartTime = null;
         let timerInterval = null;
         let currentPuzzleSolutions = [];
@@ -678,10 +691,17 @@
 
         // Show section function
         function showSection(section) {
-            // Check if admin access is required
-            if ((section === 'create' || section === 'results') && !isAuthorized) {
+            // Check if admin access is required for create section
+            if (section === 'create' && !isCreateAuthorized) {
+                document.getElementById('passwordModal').setAttribute('data-target-section', 'create');
                 document.getElementById('passwordModal').classList.remove('hidden');
-                document.getElementById('passwordModal').setAttribute('data-target-section', section);
+                return;
+            }
+            
+            // Check if admin access is required for results section
+            if (section === 'results' && !isResultsAuthorized) {
+                document.getElementById('passwordModal').setAttribute('data-target-section', 'results');
+                document.getElementById('passwordModal').classList.remove('hidden');
                 return;
             }
 
@@ -697,7 +717,8 @@
             } else if (section === 'puzzles') {
                 displayPuzzles();
             } else if (section === 'results') {
-                displayResults();
+                // Only load results when accessing results section
+                loadAndDisplayResults();
             }
         }
 
@@ -2239,7 +2260,13 @@
             const deletePuzzleId = document.getElementById('passwordModal').getAttribute('data-delete-puzzle-id');
             
             if (enteredPassword === adminPassword) {
-                isAuthorized = true;
+                // Set authorization for specific section only
+                if (targetSection === 'create') {
+                    isCreateAuthorized = true;
+                } else if (targetSection === 'results') {
+                    isResultsAuthorized = true;
+                }
+                
                 document.getElementById('passwordModal').classList.add('hidden');
                 document.getElementById('adminPassword').value = '';
                 document.getElementById('passwordError').classList.add('hidden');
@@ -2469,6 +2496,6 @@
             };
         }
     </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9665efae74949a84',t:'MTc1MzcyMjA2My4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9666538ba0039a90',t:'MTc1MzcyNjE1My4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
 
