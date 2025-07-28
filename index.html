@@ -139,7 +139,8 @@
                         </select>
                     </div>
                     <div class="flex space-x-4">
-                        <button onclick="savePuzzle()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-lg transition duration-200">Save Puzzle</button>
+                        <button onclick="saveWithSolution()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-lg transition duration-200">Save with Solution</button>
+                        <button onclick="saveWithoutSolution()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg transition duration-200">Save without Solution</button>
                         <button onclick="clearBoard()" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded-lg transition duration-200">Clear Board</button>
                     </div>
                 </div>
@@ -199,7 +200,13 @@
         <div class="bg-white p-6 rounded-lg shadow-xl max-w-5xl w-full mx-4 max-h-[95vh] overflow-y-auto">
             <div class="flex justify-between items-center mb-6">
                 <h3 id="solvePuzzleTitle" class="text-2xl font-bold text-gray-800"></h3>
-                <button onclick="closeSolveModal()" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+                <div class="flex items-center space-x-4">
+                    <div class="bg-blue-100 px-4 py-2 rounded-lg">
+                        <span class="text-sm font-semibold text-blue-800">Time: </span>
+                        <span id="puzzleTimer" class="text-lg font-bold text-blue-900">00:00</span>
+                    </div>
+                    <button onclick="closeSolveModal()" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+                </div>
             </div>
             
             <!-- Main content area -->
@@ -252,6 +259,49 @@
         </div>
     </div>
 
+    <!-- Solution Count Modal -->
+    <div id="solutionCountModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white p-8 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Number of Solutions</h2>
+            <div class="mb-6">
+                <label class="block text-gray-700 text-sm font-bold mb-2">How many solutions do you want to provide?</label>
+                <select id="solutionCount" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500">
+                    <option value="1">1 Solution</option>
+                    <option value="2">2 Solutions</option>
+                </select>
+            </div>
+            <div class="flex space-x-4">
+                <button onclick="startSolutionCapture()" class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Continue</button>
+                <button onclick="closeSolutionCountModal()" class="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Solution Capture Modal -->
+    <div id="solutionCaptureModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white p-6 rounded-lg shadow-xl max-w-5xl w-full mx-4 max-h-[95vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-6">
+                <h3 id="solutionCaptureTitle" class="text-2xl font-bold text-gray-800">Provide Solution</h3>
+                <button onclick="closeSolutionCaptureModal()" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+            </div>
+            
+            <div class="flex flex-col items-center">
+                <div id="solutionBoard" class="inline-block border-2 border-gray-800 mb-6"></div>
+                
+                <div class="w-full max-w-2xl mb-6">
+                    <h4 class="text-lg font-semibold mb-3 text-center">Solution Moves</h4>
+                    <div id="solutionNotationsBox" class="bg-gray-100 p-4 rounded-lg h-32 overflow-y-auto text-sm font-mono mb-4"></div>
+                    <div class="flex space-x-4 justify-center">
+                        <button onclick="saveSolutionMoves()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Save Solution</button>
+                        <button onclick="resetSolutionBoard()" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Reset</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+
     <!-- Password Modal -->
     <div id="passwordModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
         <div class="bg-white p-8 rounded-lg shadow-xl max-w-md w-full mx-4">
@@ -297,11 +347,30 @@
         let isAuthorized = false;
         let gameEnded = false;
         const adminPassword = 'chessclub@rkv';
+        let puzzleStartTime = null;
+        let timerInterval = null;
+        let currentPuzzleSolutions = [];
+        let solutionCaptureData = {
+            solutionsNeeded: 0,
+            currentSolution: 0,
+            capturedSolutions: [],
+            puzzleData: null
+        };
 
-        // Chess piece mappings
+        // Chess piece mappings with better visibility
         const pieceSymbols = {
-            'K': '♔', 'Q': '♕', 'R': '♖', 'B': '♗', 'N': '♘', 'P': '♙',
-            'k': '♚', 'q': '♛', 'r': '♜', 'b': '♝', 'n': '♞', 'p': '♟'
+            'K': '<span style="color: #ffffff; text-shadow: 2px 2px 4px #000000, -1px -1px 2px #000000;">♔</span>', 
+            'Q': '<span style="color: #ffffff; text-shadow: 2px 2px 4px #000000, -1px -1px 2px #000000;">♕</span>', 
+            'R': '<span style="color: #ffffff; text-shadow: 2px 2px 4px #000000, -1px -1px 2px #000000;">♖</span>', 
+            'B': '<span style="color: #ffffff; text-shadow: 2px 2px 4px #000000, -1px -1px 2px #000000;">♗</span>', 
+            'N': '<span style="color: #ffffff; text-shadow: 2px 2px 4px #000000, -1px -1px 2px #000000;">♘</span>', 
+            'P': '<span style="color: #ffffff; text-shadow: 2px 2px 4px #000000, -1px -1px 2px #000000;">♙</span>',
+            'k': '<span style="color: #000000; text-shadow: 1px 1px 2px #ffffff, -1px -1px 1px #ffffff;">♚</span>', 
+            'q': '<span style="color: #000000; text-shadow: 1px 1px 2px #ffffff, -1px -1px 1px #ffffff;">♛</span>', 
+            'r': '<span style="color: #000000; text-shadow: 1px 1px 2px #ffffff, -1px -1px 1px #ffffff;">♜</span>', 
+            'b': '<span style="color: #000000; text-shadow: 1px 1px 2px #ffffff, -1px -1px 1px #ffffff;">♝</span>', 
+            'n': '<span style="color: #000000; text-shadow: 1px 1px 2px #ffffff, -1px -1px 1px #ffffff;">♞</span>', 
+            'p': '<span style="color: #000000; text-shadow: 1px 1px 2px #ffffff, -1px -1px 1px #ffffff;">♟</span>'
         };
 
         const initialBoard = [
@@ -348,6 +417,7 @@
             addNameToToday(name);
             document.getElementById('currentUser').textContent = name;
             document.getElementById('loginModal').classList.add('hidden');
+            document.getElementById('nameError').classList.add('hidden');
             showSection('puzzles');
         }
 
@@ -428,7 +498,7 @@
                     const square = document.createElement('div');
                     square.className = `chess-square ${(row + col) % 2 === 0 ? 'light-square' : 'dark-square'}`;
                     square.onclick = () => handleCreateSquareClick(row, col);
-                    square.textContent = pieceSymbols[gameBoard[row][col]] || '';
+                    square.innerHTML = pieceSymbols[gameBoard[row][col]] || '';
                     square.id = `create-square-${row}-${col}`;
                     board.appendChild(square);
                 }
@@ -469,7 +539,7 @@
                 // Update the specific square
                 const square = document.getElementById(`create-square-${row}-${col}`);
                 if (square) {
-                    square.textContent = selectedBankPiece === '❌' ? '' : selectedBankPiece;
+                    square.innerHTML = selectedBankPiece === '❌' ? '' : selectedBankPiece;
                 }
                 
                 // Clear selection visual feedback
@@ -507,7 +577,7 @@
                 for (let col = 0; col < 8; col++) {
                     const square = document.getElementById(`create-square-${row}-${col}`);
                     if (square) {
-                        square.textContent = '';
+                        square.innerHTML = '';
                     }
                 }
             }
@@ -520,14 +590,82 @@
             });
         }
 
-        // Save puzzle
-        function savePuzzle() {
+        // Validate kings on board
+        function validateKings() {
+            let whiteKingCount = 0;
+            let blackKingCount = 0;
+            
+            for (let row = 0; row < 8; row++) {
+                for (let col = 0; col < 8; col++) {
+                    const piece = gameBoard[row][col];
+                    if (piece === 'K') whiteKingCount++;
+                    if (piece === 'k') blackKingCount++;
+                }
+            }
+            
+            const errors = [];
+            if (whiteKingCount === 0) errors.push('White King is missing');
+            if (whiteKingCount > 1) errors.push('Multiple White Kings found (only one allowed)');
+            if (blackKingCount === 0) errors.push('Black King is missing');
+            if (blackKingCount > 1) errors.push('Multiple Black Kings found (only one allowed)');
+            
+            return errors;
+        }
+
+        // Save with solution
+        function saveWithSolution() {
             const title = document.getElementById('puzzleTitle').value.trim();
             const description = document.getElementById('puzzleDescription').value.trim();
             const firstMove = document.getElementById('firstMove').value;
             
-            if (!title || !description) {
-                alert('Please fill in both title and description');
+            if (!title) {
+                alert('Please enter a puzzle title before saving.');
+                return;
+            }
+
+            if (!description) {
+                alert('Please enter a puzzle description before saving.');
+                return;
+            }
+
+            const kingErrors = validateKings();
+            if (kingErrors.length > 0) {
+                alert('Board validation failed:\n\n' + kingErrors.join('\n') + '\n\nPlease fix these issues before saving the puzzle.');
+                return;
+            }
+
+            solutionCaptureData.puzzleData = {
+                title: title,
+                description: description,
+                board: JSON.parse(JSON.stringify(gameBoard)),
+                firstMove: firstMove,
+                createdBy: currentUserName,
+                createdAt: new Date().toISOString(),
+                hasSolutions: true
+            };
+
+            document.getElementById('solutionCountModal').classList.remove('hidden');
+        }
+
+        // Save without solution
+        function saveWithoutSolution() {
+            const title = document.getElementById('puzzleTitle').value.trim();
+            const description = document.getElementById('puzzleDescription').value.trim();
+            const firstMove = document.getElementById('firstMove').value;
+            
+            if (!title) {
+                alert('Please enter a puzzle title before saving.');
+                return;
+            }
+
+            if (!description) {
+                alert('Please enter a puzzle description before saving.');
+                return;
+            }
+
+            const kingErrors = validateKings();
+            if (kingErrors.length > 0) {
+                alert('Board validation failed:\n\n' + kingErrors.join('\n') + '\n\nPlease fix these issues before saving the puzzle.');
                 return;
             }
 
@@ -538,7 +676,9 @@
                 board: JSON.parse(JSON.stringify(gameBoard)),
                 firstMove: firstMove,
                 createdBy: currentUserName,
-                createdAt: new Date().toISOString()
+                createdAt: new Date().toISOString(),
+                hasSolutions: false,
+                solutions: []
             };
 
             puzzles.push(puzzle);
@@ -549,11 +689,353 @@
             document.getElementById('firstMove').value = 'white';
             
             alert('Puzzle saved successfully!');
-            
             showSection('puzzles');
         }
 
-        // Display puzzles
+        // Close solution count modal
+        function closeSolutionCountModal() {
+            document.getElementById('solutionCountModal').classList.add('hidden');
+        }
+
+        // Start solution capture
+        function startSolutionCapture() {
+            const count = parseInt(document.getElementById('solutionCount').value);
+            solutionCaptureData.solutionsNeeded = count;
+            solutionCaptureData.currentSolution = 1;
+            solutionCaptureData.capturedSolutions = [];
+            
+            document.getElementById('solutionCountModal').classList.add('hidden');
+            openSolutionCaptureModal();
+        }
+
+        // Open solution capture modal
+        function openSolutionCaptureModal() {
+            gameBoard = JSON.parse(JSON.stringify(solutionCaptureData.puzzleData.board));
+            moveHistory = [];
+            currentTurn = solutionCaptureData.puzzleData.firstMove || 'white';
+            gameEnded = false;
+            
+            document.getElementById('solutionCaptureTitle').textContent = 
+                `Provide Solution ${solutionCaptureData.currentSolution} of ${solutionCaptureData.solutionsNeeded}`;
+            document.getElementById('solutionNotationsBox').innerHTML = '';
+            
+            initializeSolutionBoard();
+            document.getElementById('solutionCaptureModal').classList.remove('hidden');
+        }
+
+        // Initialize solution board
+        function initializeSolutionBoard() {
+            const boardContainer = document.getElementById('solutionBoard');
+            boardContainer.innerHTML = '';
+            
+            // Create wrapper div for board and labels
+            const wrapper = document.createElement('div');
+            wrapper.style.display = 'inline-block';
+            wrapper.style.position = 'relative';
+            
+            // Create file labels at top
+            const topLabels = document.createElement('div');
+            topLabels.style.display = 'flex';
+            topLabels.style.marginLeft = '20px';
+            topLabels.style.marginBottom = '2px';
+            for (let col = 0; col < 8; col++) {
+                const label = document.createElement('div');
+                label.className = 'file-label';
+                label.textContent = String.fromCharCode(97 + col);
+                topLabels.appendChild(label);
+            }
+            wrapper.appendChild(topLabels);
+            
+            // Create main board container
+            const boardDiv = document.createElement('div');
+            boardDiv.style.display = 'flex';
+            
+            // Create left rank labels
+            const leftLabels = document.createElement('div');
+            leftLabels.style.display = 'flex';
+            leftLabels.style.flexDirection = 'column';
+            leftLabels.style.marginRight = '2px';
+            for (let row = 0; row < 8; row++) {
+                const label = document.createElement('div');
+                label.className = 'rank-label';
+                label.textContent = (8 - row).toString();
+                leftLabels.appendChild(label);
+            }
+            boardDiv.appendChild(leftLabels);
+            
+            // Create the actual chess board
+            const board = document.createElement('div');
+            board.style.display = 'grid';
+            board.style.gridTemplateColumns = 'repeat(8, 60px)';
+            board.style.gridTemplateRows = 'repeat(8, 60px)';
+            board.style.border = '2px solid #333';
+            
+            for (let row = 0; row < 8; row++) {
+                for (let col = 0; col < 8; col++) {
+                    const square = document.createElement('div');
+                    square.className = `chess-square ${(row + col) % 2 === 0 ? 'light-square' : 'dark-square'}`;
+                    square.onclick = () => handleSolutionSquareClick(row, col);
+                    square.innerHTML = pieceSymbols[gameBoard[row][col]] || '';
+                    square.id = `solution-square-${row}-${col}`;
+                    board.appendChild(square);
+                }
+            }
+            boardDiv.appendChild(board);
+            wrapper.appendChild(boardDiv);
+            
+            // Create file labels at bottom
+            const bottomLabels = document.createElement('div');
+            bottomLabels.style.display = 'flex';
+            bottomLabels.style.marginLeft = '20px';
+            bottomLabels.style.marginTop = '2px';
+            for (let col = 0; col < 8; col++) {
+                const label = document.createElement('div');
+                label.className = 'file-label';
+                label.textContent = String.fromCharCode(97 + col);
+                bottomLabels.appendChild(label);
+            }
+            wrapper.appendChild(bottomLabels);
+            
+            boardContainer.appendChild(wrapper);
+        }
+
+        // Handle solution square click
+        function handleSolutionSquareClick(row, col) {
+            const piece = gameBoard[row][col];
+            
+            if (selectedSquare) {
+                // Try to move
+                if (isValidMove(selectedSquare.row, selectedSquare.col, row, col)) {
+                    makeSolutionMove(selectedSquare.row, selectedSquare.col, row, col);
+                }
+                clearSolutionSelection();
+            } else if (piece && isPieceColor(piece, currentTurn)) {
+                // Select piece
+                selectedSquare = { row, col };
+                document.getElementById(`solution-square-${row}-${col}`).classList.add('selected');
+                showSolutionPossibleMoves(row, col);
+            }
+        }
+
+        // Show possible moves for solution board
+        function showSolutionPossibleMoves(row, col) {
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    if (isValidMove(row, col, r, c)) {
+                        document.getElementById(`solution-square-${r}-${c}`).classList.add('possible-move');
+                    }
+                }
+            }
+        }
+
+        // Clear solution selection
+        function clearSolutionSelection() {
+            if (selectedSquare) {
+                document.getElementById(`solution-square-${selectedSquare.row}-${selectedSquare.col}`).classList.remove('selected');
+            }
+            selectedSquare = null;
+            
+            // Clear possible moves
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const square = document.getElementById(`solution-square-${r}-${c}`);
+                    if (square) {
+                        square.classList.remove('possible-move');
+                    }
+                }
+            }
+        }
+
+        // Make solution move
+        function makeSolutionMove(fromRow, fromCol, toRow, toCol) {
+            const piece = gameBoard[fromRow][fromCol];
+            const capturedPiece = gameBoard[toRow][toCol];
+            let specialMove = '';
+            
+            // Handle en passant capture
+            if (piece.toLowerCase() === 'p' && enPassantTarget && 
+                enPassantTarget.row === toRow && enPassantTarget.col === toCol) {
+                const capturedPawnRow = isPieceColor(piece, 'white') ? toRow + 1 : toRow - 1;
+                gameBoard[capturedPawnRow][toCol] = '';
+                specialMove = 'enpassant';
+            }
+            
+            // Handle castling
+            if (piece.toLowerCase() === 'k' && Math.abs(toCol - fromCol) === 2) {
+                const isKingside = toCol > fromCol;
+                const rookFromCol = isKingside ? 7 : 0;
+                const rookToCol = isKingside ? 5 : 3;
+                const rook = gameBoard[fromRow][rookFromCol];
+                
+                gameBoard[fromRow][rookToCol] = rook;
+                gameBoard[fromRow][rookFromCol] = '';
+                specialMove = isKingside ? 'castleKing' : 'castleQueen';
+            }
+            
+            // Make the move
+            gameBoard[toRow][toCol] = piece;
+            gameBoard[fromRow][fromCol] = '';
+            
+            // Update castling rights
+            if (piece.toLowerCase() === 'k') {
+                if (isPieceColor(piece, 'white')) {
+                    castlingRights.whiteKing = false;
+                    castlingRights.whiteQueenside = false;
+                } else {
+                    castlingRights.blackKing = false;
+                    castlingRights.blackQueenside = false;
+                }
+            }
+            
+            if (piece.toLowerCase() === 'r') {
+                if (isPieceColor(piece, 'white')) {
+                    if (fromCol === 0) castlingRights.whiteQueenside = false;
+                    if (fromCol === 7) castlingRights.whiteKing = false;
+                } else {
+                    if (fromCol === 0) castlingRights.blackQueenside = false;
+                    if (fromCol === 7) castlingRights.blackKing = false;
+                }
+            }
+            
+            // Set en passant target for pawn double moves
+            enPassantTarget = null;
+            if (piece.toLowerCase() === 'p' && Math.abs(toRow - fromRow) === 2) {
+                enPassantTarget = {
+                    row: isPieceColor(piece, 'white') ? fromRow - 1 : fromRow + 1,
+                    col: fromCol
+                };
+            }
+            
+            // Generate notation
+            const notation = generateNotation(piece, fromRow, fromCol, toRow, toCol, capturedPiece, specialMove);
+            moveHistory.push(notation);
+            
+            // Update display
+            initializeSolutionBoard();
+            updateSolutionNotations();
+            
+            // Switch turns
+            currentTurn = currentTurn === 'white' ? 'black' : 'white';
+            
+            // Check for checkmate after the move
+            const opponentColor = currentTurn === 'white' ? 'black' : 'white';
+            if (isInCheck(opponentColor) && isCheckmate(opponentColor)) {
+                gameEnded = true;
+                // Update the notation to include checkmate symbol if not already there
+                if (!moveHistory[moveHistory.length - 1].includes('#')) {
+                    moveHistory[moveHistory.length - 1] = moveHistory[moveHistory.length - 1].replace('+', '#');
+                    updateSolutionNotations();
+                }
+            }
+        }
+
+        // Update solution notations display
+        function updateSolutionNotations() {
+            const notationsBox = document.getElementById('solutionNotationsBox');
+            notationsBox.innerHTML = moveHistory.map((move, index) => {
+                const moveNumber = Math.floor(index / 2) + 1;
+                const isWhiteMove = index % 2 === 0;
+                return isWhiteMove ? `${moveNumber}. ${move}` : ` ${move}`;
+            }).join(' ');
+            notationsBox.scrollTop = notationsBox.scrollHeight;
+        }
+
+        // Save solution moves
+        function saveSolutionMoves() {
+            if (moveHistory.length === 0) {
+                alert('Please make some moves before saving the solution');
+                return;
+            }
+
+            solutionCaptureData.capturedSolutions.push([...moveHistory]);
+            
+            if (solutionCaptureData.currentSolution < solutionCaptureData.solutionsNeeded) {
+                solutionCaptureData.currentSolution++;
+                openSolutionCaptureModal();
+            } else {
+                // All solutions captured, save the puzzle
+                const puzzle = {
+                    id: Date.now(),
+                    ...solutionCaptureData.puzzleData,
+                    solutions: solutionCaptureData.capturedSolutions
+                };
+
+                puzzles.push(puzzle);
+                localStorage.setItem('chessPuzzles', JSON.stringify(puzzles));
+                
+                document.getElementById('puzzleTitle').value = '';
+                document.getElementById('puzzleDescription').value = '';
+                document.getElementById('firstMove').value = 'white';
+                
+                closeSolutionCaptureModal();
+                alert('Puzzle with solutions saved successfully!');
+                showSection('puzzles');
+            }
+        }
+
+        // Reset solution board
+        function resetSolutionBoard() {
+            gameBoard = JSON.parse(JSON.stringify(solutionCaptureData.puzzleData.board));
+            moveHistory = [];
+            currentTurn = solutionCaptureData.puzzleData.firstMove || 'white';
+            gameEnded = false;
+            
+            // Reset special move states
+            castlingRights = { whiteKing: true, whiteQueenside: true, blackKing: true, blackQueenside: true };
+            enPassantTarget = null;
+            
+            initializeSolutionBoard();
+            document.getElementById('solutionNotationsBox').innerHTML = '';
+        }
+
+        // Close solution capture modal
+        function closeSolutionCaptureModal() {
+            document.getElementById('solutionCaptureModal').classList.add('hidden');
+            clearSolutionSelection();
+        }
+
+
+
+        // Delete puzzle from card
+        function deletePuzzleFromCard(puzzleId, puzzleName, event) {
+            event.stopPropagation();
+            
+            // First confirmation
+            if (!confirm(`Are you sure you want to delete "${puzzleName}"? This action cannot be undone.`)) {
+                return;
+            }
+
+            // Show password modal for final confirmation
+            document.getElementById('passwordModal').setAttribute('data-delete-puzzle-id', puzzleId);
+            document.getElementById('passwordModal').setAttribute('data-target-section', 'delete-confirm');
+            document.getElementById('passwordModal').classList.remove('hidden');
+        }
+
+        // Confirm puzzle deletion after password verification
+        function confirmPuzzleDeletion(puzzleId) {
+            const puzzleIndex = puzzles.findIndex(p => p.id == puzzleId);
+            if (puzzleIndex === -1) {
+                alert('Puzzle not found');
+                return;
+            }
+
+            const puzzleName = puzzles[puzzleIndex].title;
+            
+            // Remove puzzle from array
+            puzzles.splice(puzzleIndex, 1);
+            localStorage.setItem('chessPuzzles', JSON.stringify(puzzles));
+            
+            // Also remove results for this puzzle
+            if (results[puzzleId]) {
+                delete results[puzzleId];
+                localStorage.setItem('chessResults', JSON.stringify(results));
+            }
+            
+            alert(`Puzzle "${puzzleName}" has been deleted successfully!`);
+            displayPuzzles();
+        }
+
+        // Display puzzles (sorted by most recent first)
         function displayPuzzles() {
             const puzzlesList = document.getElementById('puzzlesList');
             puzzlesList.innerHTML = '';
@@ -563,7 +1045,10 @@
                 return;
             }
 
-            puzzles.forEach(puzzle => {
+            // Sort puzzles by creation date (most recent first)
+            const sortedPuzzles = [...puzzles].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+            sortedPuzzles.forEach(puzzle => {
                 const puzzleCard = document.createElement('div');
                 puzzleCard.className = 'bg-white rounded-lg shadow-lg p-6';
                 const firstMoveText = puzzle.firstMove === 'white' ? 'White to move' : 'Black to move';
@@ -589,12 +1074,46 @@
             });
         }
 
+        // Start puzzle timer
+        function startPuzzleTimer() {
+            puzzleStartTime = Date.now();
+            timerInterval = setInterval(updateTimer, 1000);
+        }
+
+        // Update timer display
+        function updateTimer() {
+            if (puzzleStartTime) {
+                const elapsed = Math.floor((Date.now() - puzzleStartTime) / 1000);
+                const minutes = Math.floor(elapsed / 60);
+                const seconds = elapsed % 60;
+                document.getElementById('puzzleTimer').textContent = 
+                    `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            }
+        }
+
+        // Stop puzzle timer
+        function stopPuzzleTimer() {
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+        }
+
+        // Get elapsed time
+        function getElapsedTime() {
+            if (puzzleStartTime) {
+                return Math.floor((Date.now() - puzzleStartTime) / 1000);
+            }
+            return 0;
+        }
+
         // Solve puzzle
         function solvePuzzle(puzzleId) {
             const puzzle = puzzles.find(p => p.id === puzzleId);
             if (!puzzle) return;
 
             currentPuzzleId = puzzleId;
+            currentPuzzleSolutions = puzzle.solutions || [];
             gameBoard = JSON.parse(JSON.stringify(puzzle.board));
             moveHistory = [];
             currentTurn = puzzle.firstMove || 'white';
@@ -603,10 +1122,14 @@
             document.getElementById('solvePuzzleTitle').textContent = puzzle.title;
             document.getElementById('solvePuzzleDescription').textContent = puzzle.description;
             document.getElementById('notationsBox').innerHTML = '';
+            document.getElementById('puzzleTimer').textContent = '00:00';
             
             initializeSolveBoard();
             highlightKingInCheck();
             document.getElementById('solveModal').classList.remove('hidden');
+            
+            // Start timer
+            startPuzzleTimer();
         }
 
         // Initialize solve board
@@ -661,7 +1184,7 @@
                     const square = document.createElement('div');
                     square.className = `chess-square ${(row + col) % 2 === 0 ? 'light-square' : 'dark-square'}`;
                     square.onclick = () => handleSquareClick(row, col);
-                    square.textContent = pieceSymbols[gameBoard[row][col]] || '';
+                    square.innerHTML = pieceSymbols[gameBoard[row][col]] || '';
                     square.id = `square-${row}-${col}`;
                     board.appendChild(square);
                 }
@@ -1331,6 +1854,38 @@
             }
         }
 
+        // Check if solution matches any of the stored solutions
+        function checkSolutionMatch(userMoves, storedSolutions) {
+            if (!storedSolutions || storedSolutions.length === 0) {
+                return true; // No stored solutions, accept any solution
+            }
+            
+            for (let solution of storedSolutions) {
+                if (userMoves.length === solution.length) {
+                    let matches = true;
+                    for (let i = 0; i < userMoves.length; i++) {
+                        if (userMoves[i] !== solution[i]) {
+                            matches = false;
+                            break;
+                        }
+                    }
+                    if (matches) return true;
+                }
+            }
+            return false;
+        }
+
+        // Check if user has already submitted solution today
+        function hasUserSubmittedToday(puzzleId, userName) {
+            if (!results[puzzleId]) return false;
+            
+            const today = new Date().toDateString();
+            return results[puzzleId].some(result => 
+                result.playerName === userName && 
+                new Date(result.submittedAt).toDateString() === today
+            );
+        }
+
         // Submit solution
         function submitSolution() {
             if (!currentPuzzleId || moveHistory.length === 0) {
@@ -1338,9 +1893,21 @@
                 return;
             }
 
+            // Check if user has already submitted today
+            if (hasUserSubmittedToday(currentPuzzleId, currentUserName)) {
+                alert('You have already submitted a solution for this puzzle today. Each user can submit only once per day.');
+                return;
+            }
+
             const puzzle = puzzles.find(p => p.id === currentPuzzleId);
             if (!puzzle) return;
 
+            const elapsedTime = getElapsedTime();
+            stopPuzzleTimer();
+
+            // Check if solution matches (only for puzzles with stored solutions)
+            const isCorrect = checkSolutionMatch(moveHistory, currentPuzzleSolutions);
+            
             if (!results[currentPuzzleId]) {
                 results[currentPuzzleId] = [];
             }
@@ -1349,11 +1916,26 @@
                 playerName: currentUserName,
                 moves: [...moveHistory],
                 submittedAt: new Date().toISOString(),
-                moveCount: moveHistory.length
+                moveCount: moveHistory.length,
+                timeSpent: elapsedTime,
+                isCorrect: isCorrect
             };
 
             results[currentPuzzleId].push(solution);
+            
+            // Sort results: correct solutions by time first, then incorrect solutions at the bottom
+            results[currentPuzzleId].sort((a, b) => {
+                if (a.isCorrect && !b.isCorrect) return -1;
+                if (!a.isCorrect && b.isCorrect) return 1;
+                if (a.isCorrect && b.isCorrect) return a.timeSpent - b.timeSpent;
+                return a.timeSpent - b.timeSpent;
+            });
+            
             localStorage.setItem('chessResults', JSON.stringify(results));
+
+            if (puzzle.hasSolutions && !isCorrect) {
+                alert('Your solution has been recorded but does not match the expected solution. It will appear in the results section without ranking.');
+            }
 
             closeSolveModal();
             document.getElementById('successModal').classList.remove('hidden');
@@ -1362,6 +1944,7 @@
         // Close solve modal
         function closeSolveModal() {
             document.getElementById('solveModal').classList.add('hidden');
+            stopPuzzleTimer();
             clearSelection();
         }
 
@@ -1374,13 +1957,21 @@
         function verifyPassword() {
             const enteredPassword = document.getElementById('adminPassword').value;
             const targetSection = document.getElementById('passwordModal').getAttribute('data-target-section');
+            const deletePuzzleId = document.getElementById('passwordModal').getAttribute('data-delete-puzzle-id');
             
             if (enteredPassword === adminPassword) {
                 isAuthorized = true;
                 document.getElementById('passwordModal').classList.add('hidden');
                 document.getElementById('adminPassword').value = '';
                 document.getElementById('passwordError').classList.add('hidden');
-                showSection(targetSection);
+                
+                // Handle puzzle deletion
+                if (targetSection === 'delete-confirm' && deletePuzzleId) {
+                    confirmPuzzleDeletion(deletePuzzleId);
+                    document.getElementById('passwordModal').removeAttribute('data-delete-puzzle-id');
+                } else {
+                    showSection(targetSection);
+                }
             } else {
                 document.getElementById('passwordError').classList.remove('hidden');
                 document.getElementById('adminPassword').value = '';
@@ -1411,14 +2002,27 @@
             }
         }
 
-        // Handle Enter key in password field
+        // Handle Enter key in password field and username field
         document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('adminPassword').addEventListener('keypress', function(e) {
                 if (e.key === 'Enter') {
                     verifyPassword();
                 }
             });
+            
+            document.getElementById('userName').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    enterSite();
+                }
+            });
         });
+
+        // Format time display
+        function formatTime(seconds) {
+            const minutes = Math.floor(seconds / 60);
+            const remainingSeconds = seconds % 60;
+            return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+        }
 
         // Display results
         function displayResults() {
@@ -1430,38 +2034,138 @@
                 return;
             }
 
-            Object.keys(results).forEach(puzzleId => {
+            // Get puzzle IDs that have results and sort by puzzle creation date (newest first)
+            const puzzleIdsWithResults = Object.keys(results).filter(puzzleId => {
+                const puzzle = puzzles.find(p => p.id == puzzleId);
+                return puzzle; // Only include if puzzle still exists
+            });
+
+            puzzleIdsWithResults.sort((a, b) => {
+                const puzzleA = puzzles.find(p => p.id == a);
+                const puzzleB = puzzles.find(p => p.id == b);
+                return new Date(puzzleB.createdAt) - new Date(puzzleA.createdAt);
+            });
+
+            puzzleIdsWithResults.forEach(puzzleId => {
                 const puzzle = puzzles.find(p => p.id == puzzleId);
                 if (!puzzle) return;
 
                 const puzzleResults = results[puzzleId];
                 
                 const resultCard = document.createElement('div');
-                resultCard.className = 'bg-white rounded-lg shadow-lg p-6';
+                resultCard.className = 'bg-white rounded-lg shadow-lg mb-4';
                 
-                let resultsHtml = `
-                    <h3 class="text-xl font-bold text-gray-800 mb-4">${puzzle.title}</h3>
-                    <div class="space-y-3">
-                `;
-
-                puzzleResults.forEach(result => {
-                    resultsHtml += `
-                        <div class="border-l-4 border-blue-500 pl-4 py-2">
-                            <div class="flex justify-between items-center">
-                                <span class="font-semibold text-gray-800">${result.playerName}</span>
-                                <span class="text-sm text-gray-500">${new Date(result.submittedAt).toLocaleString()}</span>
-                            </div>
-                            <div class="text-sm text-gray-600 mt-1">
-                                Moves: ${result.moveCount} | Solution: ${result.moves.join(' ')}
+                // Create collapsible header
+                const header = document.createElement('div');
+                header.className = 'p-6 cursor-pointer hover:bg-gray-50 transition-colors duration-200';
+                header.onclick = () => toggleResultsSection(puzzleId);
+                
+                header.innerHTML = `
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <h3 class="text-xl font-bold text-gray-800 mb-2">${puzzle.title}</h3>
+                            <div class="flex items-center space-x-4">
+                                <span class="inline-block px-3 py-1 text-sm font-semibold ${puzzle.hasSolutions ? 'text-green-600 bg-green-100' : 'text-blue-600 bg-blue-100'} rounded-full">
+                                    ${puzzle.hasSolutions ? 'With Solution Validation' : 'Open Solution'}
+                                </span>
+                                <span class="text-sm text-gray-500">${puzzleResults.length} submission${puzzleResults.length !== 1 ? 's' : ''}</span>
                             </div>
                         </div>
-                    `;
-                });
+                        <div class="flex items-center">
+                            <span class="text-sm text-gray-500 mr-2">Click to view results</span>
+                            <svg id="arrow-${puzzleId}" class="w-5 h-5 text-gray-400 transform transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                            </svg>
+                        </div>
+                    </div>
+                `;
+                
+                // Create collapsible content
+                const content = document.createElement('div');
+                content.id = `results-${puzzleId}`;
+                content.className = 'hidden border-t border-gray-200 p-6 space-y-3';
+                
+                // Separate correct and incorrect solutions
+                const correctSolutions = puzzleResults.filter(r => r.isCorrect !== false);
+                const incorrectSolutions = puzzleResults.filter(r => r.isCorrect === false);
+                
+                let contentHtml = '';
+                
+                // Display correct solutions with ranking
+                if (correctSolutions.length > 0) {
+                    contentHtml += '<h4 class="font-semibold text-gray-800 mb-3">Correct Solutions (Ranked by Time)</h4>';
+                    correctSolutions.forEach((result, index) => {
+                        const rankColor = index === 0 ? 'border-yellow-500 bg-yellow-50' : 
+                                         index === 1 ? 'border-gray-400 bg-gray-50' : 
+                                         index === 2 ? 'border-orange-500 bg-orange-50' : 'border-blue-500';
+                        
+                        const rankIcon = index === 0 ? '🥇' : 
+                                        index === 1 ? '🥈' : 
+                                        index === 2 ? '🥉' : `#${index + 1}`;
 
-                resultsHtml += '</div>';
-                resultCard.innerHTML = resultsHtml;
+                        contentHtml += `
+                            <div class="border-l-4 ${rankColor} pl-4 py-2">
+                                <div class="flex justify-between items-center">
+                                    <div class="flex items-center space-x-2">
+                                        <span class="text-lg">${rankIcon}</span>
+                                        <span class="font-semibold text-gray-800">${result.playerName}</span>
+                                        <span class="text-green-600 text-sm">✓ Correct</span>
+                                    </div>
+                                    <span class="text-sm text-gray-500">${new Date(result.submittedAt).toLocaleString()}</span>
+                                </div>
+                                <div class="text-sm text-gray-600 mt-1">
+                                    Time: ${formatTime(result.timeSpent || 0)} | Moves: ${result.moveCount} | Solution: ${result.moves.join(' ')}
+                                </div>
+                            </div>
+                        `;
+                    });
+                }
+                
+                // Display incorrect solutions without ranking
+                if (incorrectSolutions.length > 0) {
+                    if (correctSolutions.length > 0) {
+                        contentHtml += '<div class="mt-6"></div>';
+                    }
+                    contentHtml += '<h4 class="font-semibold text-gray-800 mb-3">Incorrect Solutions (No Ranking)</h4>';
+                    incorrectSolutions.forEach(result => {
+                        contentHtml += `
+                            <div class="border-l-4 border-red-500 bg-red-50 pl-4 py-2">
+                                <div class="flex justify-between items-center">
+                                    <div class="flex items-center space-x-2">
+                                        <span class="text-lg">❌</span>
+                                        <span class="font-semibold text-gray-800">${result.playerName}</span>
+                                        <span class="text-red-600 text-sm">✗ Incorrect</span>
+                                    </div>
+                                    <span class="text-sm text-gray-500">${new Date(result.submittedAt).toLocaleString()}</span>
+                                </div>
+                                <div class="text-sm text-gray-600 mt-1">
+                                    Time: ${formatTime(result.timeSpent || 0)} | Moves: ${result.moveCount} | Solution: ${result.moves.join(' ')}
+                                </div>
+                            </div>
+                        `;
+                    });
+                }
+                
+                content.innerHTML = contentHtml;
+                
+                resultCard.appendChild(header);
+                resultCard.appendChild(content);
                 resultsList.appendChild(resultCard);
             });
+        }
+
+        // Toggle results section
+        function toggleResultsSection(puzzleId) {
+            const content = document.getElementById(`results-${puzzleId}`);
+            const arrow = document.getElementById(`arrow-${puzzleId}`);
+            
+            if (content.classList.contains('hidden')) {
+                content.classList.remove('hidden');
+                arrow.classList.add('rotate-180');
+            } else {
+                content.classList.add('hidden');
+                arrow.classList.remove('rotate-180');
+            }
         }
 
 
@@ -1478,5 +2182,6 @@
             localStorage.setItem('usedNamesToday', JSON.stringify(usedNamesToday));
         };
     </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'96599815b2c96ee0',t:'MTc1MzU5MjY0Ni4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9664eed647ca85ee',t:'MTc1MzcxMTU0My4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
+
