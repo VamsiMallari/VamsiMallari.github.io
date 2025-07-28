@@ -10,7 +10,7 @@
     <script type="module">
         // Import Firebase modules
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-        import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, onSnapshot, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+        import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, setDoc, onSnapshot, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
         
         // Firebase configuration
         const firebaseConfig = {
@@ -29,7 +29,7 @@
         
         // Make Firebase available globally
         window.db = db;
-        window.firestore = { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, onSnapshot, query, orderBy };
+        window.firestore = { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, setDoc, onSnapshot, query, orderBy };
         
         // Initialize the app after Firebase is ready
         window.initializeChessApp();
@@ -412,18 +412,24 @@
         async function savePuzzleToFirestore(puzzleData) {
             try {
                 const puzzlesCollection = window.firestore.collection(window.db, 'puzzles');
-                const docRef = await window.firestore.addDoc(puzzlesCollection, puzzleData);
+                const docRef = await window.firestore.addDoc(puzzlesCollection, {
+                    ...puzzleData,
+                    createdAt: new Date().toISOString()
+                });
                 
                 // Add the Firestore ID to the puzzle data
                 const newPuzzle = { id: docRef.id, ...puzzleData };
                 puzzles.unshift(newPuzzle); // Add to beginning of array
+                
+                // Also save to localStorage as backup
+                localStorage.setItem('chessPuzzles', JSON.stringify(puzzles));
                 
                 console.log('Puzzle saved to Firestore with ID:', docRef.id);
                 return newPuzzle;
             } catch (error) {
                 console.error('Error saving puzzle to Firestore:', error);
                 // Fallback to localStorage
-                const localPuzzle = { id: Date.now(), ...puzzleData };
+                const localPuzzle = { id: Date.now().toString(), ...puzzleData };
                 puzzles.unshift(localPuzzle);
                 localStorage.setItem('chessPuzzles', JSON.stringify(puzzles));
                 return localPuzzle;
@@ -452,8 +458,6 @@
 
         async function saveResultToFirestore(puzzleId, resultData) {
             try {
-                const resultDoc = window.firestore.doc(window.db, 'results', puzzleId);
-                
                 if (!results[puzzleId]) {
                     results[puzzleId] = [];
                 }
@@ -468,18 +472,31 @@
                     return a.timeSpent - b.timeSpent;
                 });
                 
-                await window.firestore.updateDoc(resultDoc, {
-                    submissions: results[puzzleId]
-                }).catch(async (error) => {
-                    if (error.code === 'not-found') {
-                        // Document doesn't exist, create it
-                        await window.firestore.addDoc(window.firestore.collection(window.db, 'results'), {
-                            submissions: results[puzzleId]
+                // Try to update existing document first
+                const resultDoc = window.firestore.doc(window.db, 'results', puzzleId);
+                
+                try {
+                    await window.firestore.updateDoc(resultDoc, {
+                        puzzleId: puzzleId,
+                        submissions: results[puzzleId],
+                        lastUpdated: new Date().toISOString()
+                    });
+                } catch (updateError) {
+                    if (updateError.code === 'not-found') {
+                        // Document doesn't exist, create it using setDoc
+                        await window.firestore.setDoc(resultDoc, {
+                            puzzleId: puzzleId,
+                            submissions: results[puzzleId],
+                            createdAt: new Date().toISOString(),
+                            lastUpdated: new Date().toISOString()
                         });
                     } else {
-                        throw error;
+                        throw updateError;
                     }
-                });
+                }
+                
+                // Also save to localStorage as backup
+                localStorage.setItem('chessResults', JSON.stringify(results));
                 
                 console.log('Result saved to Firestore for puzzle:', puzzleId);
             } catch (error) {
@@ -566,11 +583,32 @@
             try {
                 console.log('Initializing Chess Puzzles Hub with Firebase...');
                 
-                // Load only puzzles and user names on startup
+                // Load puzzles and user names on startup
                 await Promise.all([
                     loadPuzzlesFromFirestore(),
                     loadUserNamesFromFirestore()
                 ]);
+                
+                // Set up real-time listener for puzzles
+                const puzzlesCollection = window.firestore.collection(window.db, 'puzzles');
+                const puzzlesQuery = window.firestore.query(puzzlesCollection, window.firestore.orderBy('createdAt', 'desc'));
+                
+                window.firestore.onSnapshot(puzzlesQuery, (snapshot) => {
+                    puzzles = [];
+                    snapshot.forEach((doc) => {
+                        puzzles.push({ id: doc.id, ...doc.data() });
+                    });
+                    
+                    // Update localStorage backup
+                    localStorage.setItem('chessPuzzles', JSON.stringify(puzzles));
+                    
+                    // Refresh display if on puzzles section
+                    if (!document.getElementById('puzzlesSection').classList.contains('hidden')) {
+                        displayPuzzles();
+                    }
+                    
+                    console.log(`Real-time update: ${puzzles.length} puzzles loaded`);
+                });
                 
                 isFirebaseReady = true;
                 
@@ -580,7 +618,7 @@
                 // Show login modal
                 document.getElementById('loginModal').classList.remove('hidden');
                 
-                console.log('Chess Puzzles Hub initialized successfully!');
+                console.log('Chess Puzzles Hub initialized successfully with real-time updates!');
                 
             } catch (error) {
                 console.error('Error initializing Chess Puzzles Hub:', error);
@@ -592,6 +630,8 @@
                 // Fallback to localStorage
                 puzzles = JSON.parse(localStorage.getItem('chessPuzzles') || '[]');
                 results = JSON.parse(localStorage.getItem('chessResults') || '{}');
+                
+                isFirebaseReady = false;
                 
                 // Show login modal
                 document.getElementById('loginModal').classList.remove('hidden');
@@ -964,13 +1004,18 @@
             saveButton.disabled = true;
 
             try {
-                await savePuzzleToFirestore(puzzleData);
+                const savedPuzzle = await savePuzzleToFirestore(puzzleData);
                 
                 document.getElementById('puzzleTitle').value = '';
                 document.getElementById('puzzleDescription').value = '';
                 document.getElementById('firstMove').value = 'white';
                 
-                alert('Puzzle saved successfully and is now available globally!');
+                if (isFirebaseReady) {
+                    alert('Puzzle saved successfully to cloud database and is now available globally!');
+                } else {
+                    alert('Puzzle saved locally. It will sync to cloud when connection is restored.');
+                }
+                
                 showSection('puzzles');
             } catch (error) {
                 alert('Error saving puzzle. Please try again.');
@@ -1255,14 +1300,20 @@
                 saveButton.disabled = true;
 
                 try {
-                    await savePuzzleToFirestore(puzzleData);
+                    const savedPuzzle = await savePuzzleToFirestore(puzzleData);
                     
                     document.getElementById('puzzleTitle').value = '';
                     document.getElementById('puzzleDescription').value = '';
                     document.getElementById('firstMove').value = 'white';
                     
                     closeSolutionCaptureModal();
-                    alert('Puzzle with solutions saved successfully and is now available globally!');
+                    
+                    if (isFirebaseReady) {
+                        alert('Puzzle with solutions saved successfully to cloud database and is now available globally!');
+                    } else {
+                        alert('Puzzle with solutions saved locally. It will sync to cloud when connection is restored.');
+                    }
+                    
                     showSection('puzzles');
                 } catch (error) {
                     alert('Error saving puzzle. Please try again.');
@@ -2227,8 +2278,17 @@
             try {
                 await saveResultToFirestore(currentPuzzleId, solution);
 
+                let message = '';
                 if (puzzle.hasSolutions && !isCorrect) {
-                    alert('Your solution has been recorded but does not match the expected solution. It will appear in the results section without ranking.');
+                    message = 'Your solution has been recorded but does not match the expected solution. It will appear in the results section without ranking.';
+                } else if (isFirebaseReady) {
+                    message = 'Your solution has been submitted successfully to the cloud database!';
+                } else {
+                    message = 'Your solution has been saved locally and will sync to cloud when connection is restored.';
+                }
+
+                if (message) {
+                    alert(message);
                 }
 
                 closeSolveModal();
@@ -2497,6 +2557,5 @@
             };
         }
     </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'966665cad3579a89',t:'MTc1MzcyNjkwMS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9666943004118b09',t:'MTc1MzcyODgwMi4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
-
