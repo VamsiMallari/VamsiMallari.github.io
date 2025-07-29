@@ -6,10 +6,11 @@
     <title>Chess Puzzles Hub</title>
     <script src="https://cdn.tailwindcss.com"></script>
     
+    <!-- Firebase SDK -->
     <script type="module">
         // Import Firebase modules
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-        import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, setDoc, onSnapshot, query, orderBy, getDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+        import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, setDoc, onSnapshot, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
         
         // Firebase configuration
         const firebaseConfig = {
@@ -28,8 +29,7 @@
         
         // Make Firebase available globally
         window.db = db;
-        // FIX: Added getDoc to the global export for use in other functions
-        window.firestore = { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, setDoc, onSnapshot, query, orderBy, getDoc };
+        window.firestore = { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, setDoc, onSnapshot, query, orderBy };
         
         // Initialize the app after Firebase is ready
         window.initializeChessApp();
@@ -118,6 +118,7 @@
     </style>
 </head>
 <body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen">
+    <!-- Loading Overlay -->
     <div id="loadingOverlay" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div class="bg-white p-8 rounded-lg shadow-xl text-center">
             <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
@@ -125,7 +126,8 @@
             <p class="text-gray-600 mt-2">Connecting to cloud database</p>
         </div>
     </div>
-    <div id="loginModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+    <!-- User Login Modal -->
+    <div id="loginModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div class="bg-white p-8 rounded-lg shadow-xl max-w-md w-full mx-4">
             <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Welcome to Chess Puzzles Hub</h2>
             <div class="mb-4">
@@ -137,6 +139,7 @@
         </div>
     </div>
 
+    <!-- Main Navigation -->
     <nav class="bg-white shadow-lg">
         <div class="max-w-7xl mx-auto px-4">
             <div class="flex justify-between items-center py-4">
@@ -151,6 +154,7 @@
         </div>
     </nav>
 
+    <!-- Create Puzzle Section -->
     <div id="createSection" class="max-w-6xl mx-auto p-6 hidden">
         <h2 class="text-3xl font-bold text-gray-800 mb-6">Create New Puzzle</h2>
         <div class="bg-white rounded-lg shadow-lg p-6">
@@ -180,6 +184,7 @@
                 <div>
                     <h3 class="text-lg font-semibold mb-4">Setup Chess Board</h3>
                     
+                    <!-- Black Pieces Bank -->
                     <div class="mb-4">
                         <h4 class="text-sm font-semibold mb-2">Black Pieces:</h4>
                         <div class="piece-bank">
@@ -192,10 +197,12 @@
                         </div>
                     </div>
 
+                    <!-- Chess Board -->
                     <div class="chess-board-container mb-4">
                         <div id="createBoard"></div>
                     </div>
 
+                    <!-- White Pieces Bank -->
                     <div class="mb-4">
                         <h4 class="text-sm font-semibold mb-2">White Pieces:</h4>
                         <div class="piece-bank">
@@ -213,16 +220,19 @@
         </div>
     </div>
 
+    <!-- View Puzzles Section -->
     <div id="puzzlesSection" class="max-w-6xl mx-auto p-6">
         <h2 class="text-3xl font-bold text-gray-800 mb-6">Available Puzzles</h2>
         <div id="puzzlesList" class="space-y-6"></div>
     </div>
 
+    <!-- Results Section -->
     <div id="resultsSection" class="max-w-6xl mx-auto p-6 hidden">
         <h2 class="text-3xl font-bold text-gray-800 mb-6">Puzzle Results</h2>
         <div id="resultsList" class="space-y-6"></div>
     </div>
 
+    <!-- Solve Puzzle Modal -->
     <div id="solveModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
         <div class="bg-white p-6 rounded-lg shadow-xl max-w-5xl w-full mx-4 max-h-[95vh] overflow-y-auto">
             <div class="flex justify-between items-center mb-6">
@@ -236,14 +246,18 @@
                 </div>
             </div>
             
+            <!-- Main content area -->
             <div class="flex flex-col items-center">
+                <!-- Chess board -->
                 <div id="solveBoard" class="inline-block border-2 border-gray-800 mb-6"></div>
                 
+                <!-- Description below board -->
                 <div class="w-full max-w-2xl mb-6">
                     <h4 class="text-lg font-semibold mb-3 text-center">Puzzle Description</h4>
                     <div id="solvePuzzleDescription" class="bg-gray-50 p-4 rounded-lg text-center"></div>
                 </div>
                 
+                <!-- Two column layout for notations and guide -->
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full max-w-4xl">
                     <div>
                         <h4 class="text-lg font-semibold mb-2">Move Notations</h4>
@@ -270,6 +284,7 @@
         </div>
     </div>
 
+    <!-- Success Modal -->
     <div id="successModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
         <div class="bg-white p-8 rounded-lg shadow-xl max-w-md w-full mx-4">
             <div class="text-center">
@@ -281,6 +296,7 @@
         </div>
     </div>
 
+    <!-- Solution Count Modal -->
     <div id="solutionCountModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
         <div class="bg-white p-8 rounded-lg shadow-xl max-w-md w-full mx-4">
             <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Number of Solutions</h2>
@@ -298,6 +314,7 @@
         </div>
     </div>
 
+    <!-- Solution Capture Modal -->
     <div id="solutionCaptureModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
         <div class="bg-white p-6 rounded-lg shadow-xl max-w-5xl w-full mx-4 max-h-[95vh] overflow-y-auto">
             <div class="flex justify-between items-center mb-6">
@@ -322,6 +339,7 @@
 
 
 
+    <!-- Password Modal -->
     <div id="passwordModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
         <div class="bg-white p-8 rounded-lg shadow-xl max-w-md w-full mx-4">
             <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Admin Access Required</h2>
@@ -369,118 +387,216 @@
         let gameEnded = false;
         const adminPassword = 'chessclub@rkv';
 
-        // Firebase helper functions - These are now primarily for writing data. Reading is handled by real-time listeners.
-        
-        // FIX: The savePuzzleToFirestore function is now more streamlined.
-        // The real-time listener will handle updating the local 'puzzles' array.
+        // Firebase helper functions
+        async function loadPuzzlesFromFirestore() {
+            try {
+                const puzzlesCollection = window.firestore.collection(window.db, 'puzzles');
+                const puzzlesQuery = window.firestore.query(puzzlesCollection, window.firestore.orderBy('createdAt', 'desc'));
+                const querySnapshot = await window.firestore.getDocs(puzzlesQuery);
+                
+                puzzles = [];
+                querySnapshot.forEach((doc) => {
+                    puzzles.push({ id: doc.id, ...doc.data() });
+                });
+                
+                console.log(`Loaded ${puzzles.length} puzzles from Firestore`);
+                return puzzles;
+            } catch (error) {
+                console.error('Error loading puzzles from Firestore:', error);
+                // Fallback to localStorage
+                puzzles = JSON.parse(localStorage.getItem('chessPuzzles') || '[]');
+                return puzzles;
+            }
+        }
+
         async function savePuzzleToFirestore(puzzleData) {
             try {
                 const puzzlesCollection = window.firestore.collection(window.db, 'puzzles');
-                // Add a proper server timestamp for reliable sorting
                 const docRef = await window.firestore.addDoc(puzzlesCollection, {
                     ...puzzleData,
-                    createdAt: new Date() // Using native Date object which Firestore converts to its timestamp
+                    createdAt: new Date().toISOString()
                 });
+                
+                // Add the Firestore ID to the puzzle data
+                const newPuzzle = { id: docRef.id, ...puzzleData, createdAt: new Date().toISOString() };
+                
+                // Don't manually add to puzzles array - let the real-time listener handle it
+                // puzzles.unshift(newPuzzle);
+                
+                // Also save to localStorage as backup
+                const currentPuzzles = JSON.parse(localStorage.getItem('chessPuzzles') || '[]');
+                currentPuzzles.unshift(newPuzzle);
+                localStorage.setItem('chessPuzzles', JSON.stringify(currentPuzzles));
+                
                 console.log('Puzzle saved to Firestore with ID:', docRef.id);
-                return { id: docRef.id, ...puzzleData };
+                return newPuzzle;
             } catch (error) {
                 console.error('Error saving puzzle to Firestore:', error);
-                alert('Could not save puzzle to the cloud. Check console for errors. It might be a security rule issue.');
-                // Fallback to localStorage as a backup
+                // Fallback to localStorage
                 const localPuzzle = { id: Date.now().toString(), ...puzzleData, createdAt: new Date().toISOString() };
-                const localPuzzles = JSON.parse(localStorage.getItem('chessPuzzles') || '[]');
-                localPuzzles.unshift(localPuzzle);
-                localStorage.setItem('chessPuzzles', JSON.stringify(localPuzzles));
-                // Manually update the global array and display if Firestore fails
                 puzzles.unshift(localPuzzle);
-                displayPuzzles();
-                throw error; // re-throw error to be caught by the caller
+                localStorage.setItem('chessPuzzles', JSON.stringify(puzzles));
+                return localPuzzle;
             }
         }
-        
-        // FIX: The saveResultToFirestore function is updated for better sorting and reliability.
-        // The real-time listener will handle updating the local 'results' object.
+
+        async function loadResultsFromFirestore() {
+            try {
+                const resultsCollection = window.firestore.collection(window.db, 'results');
+                const querySnapshot = await window.firestore.getDocs(resultsCollection);
+                
+                results = {};
+                querySnapshot.forEach((doc) => {
+                    results[doc.id] = doc.data().submissions || [];
+                });
+                
+                console.log(`Loaded results for ${Object.keys(results).length} puzzles from Firestore`);
+                return results;
+            } catch (error) {
+                console.error('Error loading results from Firestore:', error);
+                // Fallback to localStorage
+                results = JSON.parse(localStorage.getItem('chessResults') || '{}');
+                return results;
+            }
+        }
+
         async function saveResultToFirestore(puzzleId, resultData) {
             try {
-                const resultDocRef = window.firestore.doc(window.db, 'results', puzzleId);
-                const docSnap = await window.firestore.getDoc(resultDocRef);
-
-                let currentSubmissions = [];
-                if (docSnap.exists()) {
-                    currentSubmissions = docSnap.data().submissions || [];
-                }
-
-                currentSubmissions.push(resultData);
-
+                // Get current results for this puzzle
+                const currentResults = results[puzzleId] || [];
+                
+                // Add new result
+                currentResults.push(resultData);
+                
                 // Sort results: correct solutions by time first, then incorrect solutions
-                currentSubmissions.sort((a, b) => {
+                currentResults.sort((a, b) => {
                     if (a.isCorrect && !b.isCorrect) return -1;
                     if (!a.isCorrect && b.isCorrect) return 1;
                     if (a.isCorrect && b.isCorrect) return a.timeSpent - b.timeSpent;
-                    return 0; // Keep original order for incorrect solutions
+                    return a.timeSpent - b.timeSpent;
                 });
-
-                await window.firestore.setDoc(resultDocRef, {
-                    puzzleId: puzzleId,
-                    submissions: currentSubmissions,
-                    lastUpdated: new Date()
-                }, { merge: true }); // Use merge to avoid overwriting other fields if they exist
-
+                
+                // Update Firestore document
+                const resultDoc = window.firestore.doc(window.db, 'results', puzzleId);
+                
+                try {
+                    await window.firestore.updateDoc(resultDoc, {
+                        puzzleId: puzzleId,
+                        submissions: currentResults,
+                        lastUpdated: new Date().toISOString()
+                    });
+                } catch (updateError) {
+                    if (updateError.code === 'not-found') {
+                        // Document doesn't exist, create it using setDoc
+                        await window.firestore.setDoc(resultDoc, {
+                            puzzleId: puzzleId,
+                            submissions: currentResults,
+                            createdAt: new Date().toISOString(),
+                            lastUpdated: new Date().toISOString()
+                        });
+                    } else {
+                        throw updateError;
+                    }
+                }
+                
+                // Don't manually update results object - let the real-time listener handle it
+                // results[puzzleId] = currentResults;
+                
+                // Also save to localStorage as backup
+                const localResults = JSON.parse(localStorage.getItem('chessResults') || '{}');
+                localResults[puzzleId] = currentResults;
+                localStorage.setItem('chessResults', JSON.stringify(localResults));
+                
                 console.log('Result saved to Firestore for puzzle:', puzzleId);
             } catch (error) {
                 console.error('Error saving result to Firestore:', error);
-                alert('Could not save result to the cloud. Check console for errors. It might be a security rule issue.');
-                throw error; // re-throw error
+                // Fallback to localStorage
+                if (!results[puzzleId]) {
+                    results[puzzleId] = [];
+                }
+                results[puzzleId].push(resultData);
+                results[puzzleId].sort((a, b) => {
+                    if (a.isCorrect && !b.isCorrect) return -1;
+                    if (!a.isCorrect && b.isCorrect) return 1;
+                    if (a.isCorrect && b.isCorrect) return a.timeSpent - b.timeSpent;
+                    return a.timeSpent - b.timeSpent;
+                });
+                localStorage.setItem('chessResults', JSON.stringify(results));
             }
         }
-        
-        // FIX: The saveUserNamesToFirestore function now correctly uses `setDoc` to create or overwrite today's document.
+
         async function saveUserNamesToFirestore() {
             try {
-                const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD for a consistent ID
-                const userNamesDocRef = window.firestore.doc(window.db, 'userNames', today);
+                const today = new Date().toDateString();
+                const userNamesDoc = window.firestore.doc(window.db, 'userNames', today);
                 
-                await window.firestore.setDoc(userNamesDocRef, {
-                    names: usedNamesToday[new Date().toDateString()] || []
+                await window.firestore.updateDoc(userNamesDoc, {
+                    names: usedNamesToday[today] || []
+                }).catch(async (error) => {
+                    if (error.code === 'not-found') {
+                        // Document doesn't exist, create it
+                        await window.firestore.addDoc(window.firestore.collection(window.db, 'userNames'), {
+                            date: today,
+                            names: usedNamesToday[today] || []
+                        });
+                    } else {
+                        throw error;
+                    }
                 });
                 
                 console.log('User names saved to Firestore for date:', today);
             } catch (error) {
                 console.error('Error saving user names to Firestore:', error);
+                // Fallback to localStorage
+                localStorage.setItem('usedNamesToday', JSON.stringify(usedNamesToday));
             }
         }
 
-        // FIX: The loadUserNamesFromFirestore function is now more efficient, fetching only today's document.
         async function loadUserNamesFromFirestore() {
             try {
-                const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
-                const todayString = new Date().toDateString();
-                const userNamesDocRef = window.firestore.doc(window.db, 'userNames', today);
-                const docSnap = await window.firestore.getDoc(userNamesDocRef);
+                const today = new Date().toDateString();
+                const userNamesCollection = window.firestore.collection(window.db, 'userNames');
+                const querySnapshot = await window.firestore.getDocs(userNamesCollection);
                 
-                if (docSnap.exists()) {
-                    const cloudNames = docSnap.data().names || [];
-                    const localNames = usedNamesToday[todayString] || [];
-                    // Merge cloud and local names, removing duplicates
-                    usedNamesToday[todayString] = [...new Set([...localNames, ...cloudNames])];
-                }
+                const cloudUsedNames = {};
+                querySnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    if (data.date) {
+                        cloudUsedNames[data.date] = data.names || [];
+                    }
+                });
+                
+                // Merge with local data
+                Object.keys(cloudUsedNames).forEach(date => {
+                    if (!usedNamesToday[date]) {
+                        usedNamesToday[date] = [];
+                    }
+                    cloudUsedNames[date].forEach(name => {
+                        if (!usedNamesToday[date].includes(name)) {
+                            usedNamesToday[date].push(name);
+                        }
+                    });
+                });
                 
                 console.log('User names loaded from Firestore');
                 return usedNamesToday;
             } catch (error) {
                 console.error('Error loading user names from Firestore:', error);
+                // Keep local data
                 return usedNamesToday;
             }
         }
-
 
         // Initialize Firebase and load data
         window.initializeChessApp = async function() {
             try {
                 console.log('Initializing Chess Puzzles Hub with Firebase...');
                 
-                // Load initial user names
-                await loadUserNamesFromFirestore();
+                // Load puzzles and user names on startup
+                await Promise.all([
+                    loadPuzzlesFromFirestore(),
+                    loadUserNamesFromFirestore()
+                ]);
                 
                 // Set up real-time listener for puzzles
                 const puzzlesCollection = window.firestore.collection(window.db, 'puzzles');
@@ -489,23 +605,21 @@
                 window.firestore.onSnapshot(puzzlesQuery, (snapshot) => {
                     const newPuzzles = [];
                     snapshot.forEach((doc) => {
-                        // FIX: Ensure createdAt is a JS Date object for reliable sorting later
-                        const data = doc.data();
-                        const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.createdAt);
-                        newPuzzles.push({ id: doc.id, ...data, createdAt });
+                        newPuzzles.push({ id: doc.id, ...doc.data() });
                     });
                     
+                    // Update global puzzles array
                     puzzles = newPuzzles;
+                    
+                    // Update localStorage backup
                     localStorage.setItem('chessPuzzles', JSON.stringify(puzzles));
                     
                     // Refresh display if on puzzles section
                     if (!document.getElementById('puzzlesSection').classList.contains('hidden')) {
                         displayPuzzles();
                     }
-                    if (!document.getElementById('resultsSection').classList.contains('hidden')) {
-                        displayResults();
-                    }
-                    console.log(`Real-time update: ${puzzles.length} puzzles loaded.`);
+                    
+                    console.log(`Real-time update: ${puzzles.length} puzzles loaded`);
                 });
                 
                 // Set up real-time listener for results
@@ -516,39 +630,61 @@
                         newResults[doc.id] = doc.data().submissions || [];
                     });
                     
+                    // Update global results object
                     results = newResults;
+                    
+                    // Update localStorage backup
                     localStorage.setItem('chessResults', JSON.stringify(results));
                     
                     // Refresh display if on results section
                     if (!document.getElementById('resultsSection').classList.contains('hidden')) {
                         displayResults();
                     }
-                    console.log(`Real-time update: Results for ${Object.keys(results).length} puzzles loaded.`);
+                    
+                    console.log(`Real-time update: Results loaded for ${Object.keys(results).length} puzzles`);
                 });
                 
                 isFirebaseReady = true;
+                
+                // Hide loading overlay
                 document.getElementById('loadingOverlay').classList.add('hidden');
+                
+                // Show login modal
                 document.getElementById('loginModal').classList.remove('hidden');
+                
                 console.log('Chess Puzzles Hub initialized successfully with real-time updates!');
                 
             } catch (error) {
                 console.error('Error initializing Chess Puzzles Hub:', error);
+                
+                // Hide loading overlay and show error
                 document.getElementById('loadingOverlay').classList.add('hidden');
                 alert('Failed to connect to cloud database. The app will work with local storage only.');
                 
+                // Fallback to localStorage
                 puzzles = JSON.parse(localStorage.getItem('chessPuzzles') || '[]');
                 results = JSON.parse(localStorage.getItem('chessResults') || '{}');
+                
                 isFirebaseReady = false;
+                
+                // Show login modal
                 document.getElementById('loginModal').classList.remove('hidden');
             }
         };
 
-        // FIX: This function is simplified. It now just calls displayResults,
-        // relying on the data from the real-time listener.
-        function loadAndDisplayResults() {
-            displayResults();
+        // Load and display results (only when admin accesses results section)
+        async function loadAndDisplayResults() {
+            try {
+                // Load results from Firestore
+                await loadResultsFromFirestore();
+                displayResults();
+            } catch (error) {
+                console.error('Error loading results:', error);
+                // Fallback to localStorage
+                results = JSON.parse(localStorage.getItem('chessResults') || '{}');
+                displayResults();
+            }
         }
-        
         let puzzleStartTime = null;
         let timerInterval = null;
         let currentPuzzleSolutions = [];
@@ -855,6 +991,7 @@
                 board: JSON.parse(JSON.stringify(gameBoard)),
                 firstMove: firstMove,
                 createdBy: currentUserName,
+                createdAt: new Date().toISOString(),
                 hasSolutions: true
             };
 
@@ -889,6 +1026,7 @@
                 board: JSON.parse(JSON.stringify(gameBoard)),
                 firstMove: firstMove,
                 createdBy: currentUserName,
+                createdAt: new Date().toISOString(),
                 hasSolutions: false,
                 solutions: []
             };
@@ -900,17 +1038,22 @@
             saveButton.disabled = true;
 
             try {
-                await savePuzzleToFirestore(puzzleData);
+                const savedPuzzle = await savePuzzleToFirestore(puzzleData);
                 
                 document.getElementById('puzzleTitle').value = '';
                 document.getElementById('puzzleDescription').value = '';
                 document.getElementById('firstMove').value = 'white';
                 
-                alert('Puzzle saved successfully and is now available globally!');
+                if (isFirebaseReady) {
+                    alert('Puzzle saved successfully to cloud database and is now available globally!');
+                } else {
+                    alert('Puzzle saved locally. It will sync to cloud when connection is restored.');
+                }
                 
                 showSection('puzzles');
             } catch (error) {
-                // Error is already alerted in the save function
+                alert('Error saving puzzle. Please try again.');
+                console.error('Save error:', error);
             } finally {
                 saveButton.textContent = originalText;
                 saveButton.disabled = false;
@@ -1191,7 +1334,7 @@
                 saveButton.disabled = true;
 
                 try {
-                    await savePuzzleToFirestore(puzzleData);
+                    const savedPuzzle = await savePuzzleToFirestore(puzzleData);
                     
                     document.getElementById('puzzleTitle').value = '';
                     document.getElementById('puzzleDescription').value = '';
@@ -1199,11 +1342,16 @@
                     
                     closeSolutionCaptureModal();
                     
-                    alert('Puzzle with solutions saved successfully and is now available globally!');
+                    if (isFirebaseReady) {
+                        alert('Puzzle with solutions saved successfully to cloud database and is now available globally!');
+                    } else {
+                        alert('Puzzle with solutions saved locally. It will sync to cloud when connection is restored.');
+                    }
                     
                     showSection('puzzles');
                 } catch (error) {
-                    // Error already handled in save function
+                    alert('Error saving puzzle. Please try again.');
+                    console.error('Save error:', error);
                 } finally {
                     saveButton.textContent = originalText;
                     saveButton.disabled = false;
@@ -1256,21 +1404,21 @@
                 alert('Puzzle not found');
                 return;
             }
-            
-            // FIX: Delete from Firestore first
-            try {
-                const puzzleDocRef = window.firestore.doc(window.db, 'puzzles', puzzleId);
-                window.firestore.deleteDoc(puzzleDocRef);
 
-                const resultDocRef = window.firestore.doc(window.db, 'results', puzzleId);
-                window.firestore.deleteDoc(resultDocRef); // Also delete associated results
-                
-                alert(`Puzzle "${puzzles[puzzleIndex].title}" has been deleted successfully! The view will update shortly.`);
-                // The real-time listener will automatically remove it from the UI.
-            } catch (error) {
-                console.error("Error deleting puzzle from Firestore: ", error);
-                alert("Failed to delete puzzle from the cloud.");
+            const puzzleName = puzzles[puzzleIndex].title;
+            
+            // Remove puzzle from array
+            puzzles.splice(puzzleIndex, 1);
+            localStorage.setItem('chessPuzzles', JSON.stringify(puzzles));
+            
+            // Also remove results for this puzzle
+            if (results[puzzleId]) {
+                delete results[puzzleId];
+                localStorage.setItem('chessResults', JSON.stringify(results));
             }
+            
+            alert(`Puzzle "${puzzleName}" has been deleted successfully!`);
+            displayPuzzles();
         }
 
         // Display puzzles (sorted by most recent first)
@@ -1282,9 +1430,11 @@
                 puzzlesList.innerHTML = '<div class="text-center text-gray-500 py-8">No puzzles available yet. Create the first one!</div>';
                 return;
             }
-            
-            // Data is already sorted by the Firestore query, no need to sort again here.
-            puzzles.forEach(puzzle => {
+
+            // Sort puzzles by creation date (most recent first)
+            const sortedPuzzles = [...puzzles].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+            sortedPuzzles.forEach(puzzle => {
                 const puzzleCard = document.createElement('div');
                 puzzleCard.className = 'bg-white rounded-lg shadow-lg p-6';
                 const firstMoveText = puzzle.firstMove === 'white' ? 'White to move' : 'Black to move';
@@ -2174,18 +2324,21 @@
                 let message = '';
                 if (puzzle.hasSolutions && !isCorrect) {
                     message = 'Your solution has been recorded but does not match the expected solution. It will appear in the results section without ranking.';
+                } else if (isFirebaseReady) {
+                    message = 'Your solution has been submitted successfully to the cloud database!';
+                } else {
+                    message = 'Your solution has been saved locally and will sync to cloud when connection is restored.';
+                }
+
+                if (message) {
+                    alert(message);
                 }
 
                 closeSolveModal();
                 document.getElementById('successModal').classList.remove('hidden');
-
-                if (message) {
-                    // Show a slightly delayed alert so the success modal is visible first
-                    setTimeout(() => alert(message), 200);
-                }
-
             } catch (error) {
-                // Error already alerted in save function
+                alert('Error submitting solution. Please try again.');
+                console.error('Submit error:', error);
             } finally {
                 submitButton.textContent = originalText;
                 submitButton.disabled = false;
@@ -2300,7 +2453,6 @@
             puzzleIdsWithResults.sort((a, b) => {
                 const puzzleA = puzzles.find(p => p.id == a);
                 const puzzleB = puzzles.find(p => p.id == b);
-                if (!puzzleA || !puzzleB) return 0;
                 return new Date(puzzleB.createdAt) - new Date(puzzleA.createdAt);
             });
 
@@ -2349,63 +2501,59 @@
                 
                 let contentHtml = '';
                 
-                if (puzzleResults.length === 0) {
-                    contentHtml = '<div class="text-gray-500">No submissions for this puzzle yet.</div>'
-                } else {
-                    // Display correct solutions with ranking
-                    if (correctSolutions.length > 0) {
-                        contentHtml += '<h4 class="font-semibold text-gray-800 mb-3">Correct Solutions (Ranked by Time)</h4>';
-                        correctSolutions.forEach((result, index) => {
-                            const rankColor = index === 0 ? 'border-yellow-400 bg-yellow-50' : 
-                                             index === 1 ? 'border-gray-400 bg-gray-50' : 
-                                             index === 2 ? 'border-orange-400 bg-orange-50' : 'border-gray-300';
-                            
-                            const rankIcon = index === 0 ? '🥇' : 
-                                            index === 1 ? '🥈' : 
-                                            index === 2 ? '🥉' : `#${index + 1}`;
+                // Display correct solutions with ranking
+                if (correctSolutions.length > 0) {
+                    contentHtml += '<h4 class="font-semibold text-gray-800 mb-3">Correct Solutions (Ranked by Time)</h4>';
+                    correctSolutions.forEach((result, index) => {
+                        const rankColor = index === 0 ? 'border-yellow-500 bg-yellow-50' : 
+                                         index === 1 ? 'border-gray-400 bg-gray-50' : 
+                                         index === 2 ? 'border-orange-500 bg-orange-50' : 'border-blue-500';
+                        
+                        const rankIcon = index === 0 ? '🥇' : 
+                                        index === 1 ? '🥈' : 
+                                        index === 2 ? '🥉' : `#${index + 1}`;
 
-                            contentHtml += `
-                                <div class="border-l-4 ${rankColor} pl-4 py-2">
-                                    <div class="flex justify-between items-center">
-                                        <div class="flex items-center space-x-2">
-                                            <span class="text-lg">${rankIcon}</span>
-                                            <span class="font-semibold text-gray-800">${result.playerName}</span>
-                                            <span class="text-green-600 text-sm">✓ Correct</span>
-                                        </div>
-                                        <span class="text-sm text-gray-500">${new Date(result.submittedAt).toLocaleString()}</span>
+                        contentHtml += `
+                            <div class="border-l-4 ${rankColor} pl-4 py-2">
+                                <div class="flex justify-between items-center">
+                                    <div class="flex items-center space-x-2">
+                                        <span class="text-lg">${rankIcon}</span>
+                                        <span class="font-semibold text-gray-800">${result.playerName}</span>
+                                        <span class="text-green-600 text-sm">✓ Correct</span>
                                     </div>
-                                    <div class="text-sm text-gray-600 mt-1">
-                                        Time: ${formatTime(result.timeSpent || 0)} | Moves: ${result.moveCount} | Solution: ${result.moves.join(' ')}
-                                    </div>
+                                    <span class="text-sm text-gray-500">${new Date(result.submittedAt).toLocaleString()}</span>
                                 </div>
-                            `;
-                        });
-                    }
-                    
-                    // Display incorrect solutions without ranking
-                    if (incorrectSolutions.length > 0) {
-                        if (correctSolutions.length > 0) {
-                            contentHtml += '<div class="mt-6"></div>';
-                        }
-                        contentHtml += '<h4 class="font-semibold text-gray-800 mb-3">Other Submissions (Not ranked)</h4>';
-                        incorrectSolutions.forEach(result => {
-                            contentHtml += `
-                                <div class="border-l-4 border-red-400 bg-red-50 pl-4 py-2">
-                                    <div class="flex justify-between items-center">
-                                        <div class="flex items-center space-x-2">
-                                            <span class="text-lg"></span>
-                                            <span class="font-semibold text-gray-800">${result.playerName}</span>
-                                            <span class="text-red-600 text-sm">✗ Incorrect</span>
-                                        </div>
-                                        <span class="text-sm text-gray-500">${new Date(result.submittedAt).toLocaleString()}</span>
-                                    </div>
-                                    <div class="text-sm text-gray-600 mt-1">
-                                        Time: ${formatTime(result.timeSpent || 0)} | Moves: ${result.moveCount} | Solution: ${result.moves.join(' ')}
-                                    </div>
+                                <div class="text-sm text-gray-600 mt-1">
+                                    Time: ${formatTime(result.timeSpent || 0)} | Moves: ${result.moveCount} | Solution: ${result.moves.join(' ')}
                                 </div>
-                            `;
-                        });
+                            </div>
+                        `;
+                    });
+                }
+                
+                // Display incorrect solutions without ranking
+                if (incorrectSolutions.length > 0) {
+                    if (correctSolutions.length > 0) {
+                        contentHtml += '<div class="mt-6"></div>';
                     }
+                    contentHtml += '<h4 class="font-semibold text-gray-800 mb-3">Incorrect Solutions (No Ranking)</h4>';
+                    incorrectSolutions.forEach(result => {
+                        contentHtml += `
+                            <div class="border-l-4 border-red-500 bg-red-50 pl-4 py-2">
+                                <div class="flex justify-between items-center">
+                                    <div class="flex items-center space-x-2">
+                                        <span class="text-lg">❌</span>
+                                        <span class="font-semibold text-gray-800">${result.playerName}</span>
+                                        <span class="text-red-600 text-sm">✗ Incorrect</span>
+                                    </div>
+                                    <span class="text-sm text-gray-500">${new Date(result.submittedAt).toLocaleString()}</span>
+                                </div>
+                                <div class="text-sm text-gray-600 mt-1">
+                                    Time: ${formatTime(result.timeSpent || 0)} | Moves: ${result.moveCount} | Solution: ${result.moves.join(' ')}
+                                </div>
+                            </div>
+                        `;
+                    });
                 }
                 
                 content.innerHTML = contentHtml;
@@ -2429,6 +2577,29 @@
                 arrow.classList.remove('rotate-180');
             }
         }
+
+
+
+        // Clean up old names on initialization (keep only today's)
+        function cleanupOldNames() {
+            const today = new Date().toDateString();
+            const cleanedNames = {};
+            if (usedNamesToday[today]) {
+                cleanedNames[today] = usedNamesToday[today];
+            }
+            usedNamesToday = cleanedNames;
+            localStorage.setItem('usedNamesToday', JSON.stringify(usedNamesToday));
+        }
+
+        // Initialize cleanup when Firebase is ready
+        if (typeof window.initializeChessApp === 'undefined') {
+            window.initializeChessApp = function() {
+                cleanupOldNames();
+                document.getElementById('loadingOverlay').classList.add('hidden');
+                document.getElementById('loginModal').classList.remove('hidden');
+            };
+        }
     </script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9666b16192428af7',t:'MTc1MzcyOTk5Ny4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
+
