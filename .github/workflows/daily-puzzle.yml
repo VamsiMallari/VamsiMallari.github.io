@@ -1,0 +1,27 @@
+name: Daily Puzzle Uploader
+
+on:
+  schedule:
+    - cron: '0 3 * * *'  # 8:30 AM IST daily
+  workflow_dispatch:
+
+jobs:
+  post_puzzle:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install firebase-admin requests
+
+      - name: Upload puzzle to Firestore
+        env:
+          FIREBASE_CREDENTIALS: ${{ secrets.FIREBASE_CREDENTIALS }}
+        run: python .github/scripts/upload_daily_puzzle.py
