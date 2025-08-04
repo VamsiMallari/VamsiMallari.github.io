@@ -161,6 +161,22 @@
         };
 
         // --- Core App Logic ---
+
+async function confirmDeletePuzzle(puzzleId) {
+    const password = prompt("Enter admin password to delete puzzle:");
+    if (password !== adminPassword) {
+        alert("Incorrect password.");
+        return;
+    }
+    try {
+        await window.firestore.deleteDoc(window.firestore.doc(window.db, 'puzzles', puzzleId));
+        alert("Puzzle deleted successfully.");
+    } catch (e) {
+        console.error("Deletion failed", e);
+        alert("Error deleting puzzle.");
+    }
+}
+
         const pieceSymbols = { 'K': '♔', 'Q': '♕', 'R': '♖', 'B': '♗', 'N': '♘', 'P': '♙', 'k': '♚', 'q': '♛', 'r': '♜', 'b': '♝', 'n': '♞', 'p': '♟' };
         const initialBoard = [ ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'], ['p', 'p', 'p', 'p', 'p', 'p', 'p', 'p'], ['', '', '', '', '', '', '', ''], ['', '', '', '', '', '', '', ''], ['', '', '', '', '', '', '', ''], ['', '', '', '', '', '', '', ''], ['P', 'P', 'P', 'P', 'P', 'P', 'P', 'P'], ['R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R'] ];
         async function enterSite() {
@@ -206,6 +222,20 @@
         }
         function saveWithoutSolution() { savePuzzle(false, {}); }
         function saveWithSolution() {
+    if (!document.getElementById('puzzleTitle').value.trim() || !document.getElementById('puzzleDescription').value.trim() || !validateKings()) return;
+    const boardAsMap = {};
+    gameBoard.forEach((row, index) => { boardAsMap[index] = row; });
+    solutionCaptureData = {};  // RESET any stale data
+    solutionCaptureData.puzzleData = {
+        title: document.getElementById('puzzleTitle').value.trim(),
+        description: document.getElementById('puzzleDescription').value.trim(),
+        firstMove: document.getElementById('firstMove').value,
+        board: boardAsMap,
+        createdBy: currentUserName,
+        hasSolutions: true
+    };
+    document.getElementById('solutionCountModal').classList.remove('hidden');
+
             if (!document.getElementById('puzzleTitle').value.trim() || !document.getElementById('puzzleDescription').value.trim() || !validateKings()) return;
             const boardAsMap = {};
             gameBoard.forEach((row, index) => { boardAsMap[index] = row; });
@@ -267,7 +297,11 @@
                 archivedPuzzles.forEach(p => document.getElementById('archivedPuzzlesList').appendChild(createPuzzleCard(p)));
             }
         }
-        function createPuzzleCard(puzzle) { const card = document.createElement('div'); card.className = 'bg-white rounded-lg shadow-lg p-6 border border-gray-200'; const firstMoveText = puzzle.firstMove.charAt(0).toUpperCase() + puzzle.firstMove.slice(1) + ' to move'; card.innerHTML = `<div class="flex justify-between items-start mb-4"><h3 class="text-xl font-bold text-gray-800">${puzzle.title}</h3><span class="text-sm text-gray-500">${new Date(puzzle.createdAt).toLocaleDateString()}</span></div><p class="text-gray-600 mb-3">${puzzle.description}</p><div class="mb-4"><span class="inline-block px-3 py-1 text-sm font-semibold text-blue-800 bg-blue-100 rounded-full">${firstMoveText}</span></div><div class="flex justify-between items-center"><span class="text-sm text-gray-500">Created by: ${puzzle.createdBy}</span><button onclick="solvePuzzle('${puzzle.id}')" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">Solve Puzzle</button></div>`; return card; }
+        function createPuzzleCard(puzzle) { const card = document.createElement('div'); card.className = 'bg-white rounded-lg shadow-lg p-6 border border-gray-200'; const firstMoveText = puzzle.firstMove.charAt(0).toUpperCase() + puzzle.firstMove.slice(1) + ' to move'; card.innerHTML = `<div class="flex justify-between items-start mb-4"><div class="flex items-center space-x-2">
+<button onclick="confirmDeletePuzzle('${puzzle.id}')" title="Delete Puzzle" class="text-red-600 hover:text-red-800 mr-2">
+    🗑️
+</button>
+<h3 class="text-xl font-bold text-gray-800">${puzzle.title}</h3></div><span class="text-sm text-gray-500">${new Date(puzzle.createdAt).toLocaleDateString()}</span></div><p class="text-gray-600 mb-3">${puzzle.description}</p><div class="mb-4"><span class="inline-block px-3 py-1 text-sm font-semibold text-blue-800 bg-blue-100 rounded-full">${firstMoveText}</span></div><div class="flex justify-between items-center"><span class="text-sm text-gray-500">Created by: ${puzzle.createdBy}</span><button onclick="solvePuzzle('${puzzle.id}')" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">Solve Puzzle</button></div>`; return card; }
         function solvePuzzle(puzzleId) {
             const puzzle = puzzles.find(p => p.id === puzzleId);
             if (!puzzle) return alert('Puzzle not found.');
@@ -351,7 +385,19 @@
             for (let r = 0; r < 8; r++) { for (let c = 0; c < 8; c++) { const square = document.createElement('div'); square.className = `chess-square ${(r + c) % 2 === 0 ? 'light-square' : 'dark-square'}`; if (clickHandler) square.onclick = () => clickHandler(r, c); square.innerHTML = pieceSymbols[board[r][c]] || ''; square.id = `${containerId}-square-${r}-${c}`; if (selectedSquare?.row === r && selectedSquare?.col === c) square.classList.add('selected'); boardEl.appendChild(square); } }
             boardContainer.appendChild(boardEl);
         }
-        function showPossibleMoves(row, col, isSolutionBoard = false) { const legalMoves = getLegalMoves(currentTurn, gameBoard); const boardId = isSolutionBoard ? 'solutionBoard' : 'solveBoard'; legalMoves.forEach(move => { if (move.from.row === row && move.from.col === col) document.getElementById(`${boardId}-square-${move.to.row}-${move.to.col}`).classList.add('possible-move'); }); }
+        function showPossibleMoves(row, col, isSolutionBoard = false) {
+    const legalMoves = getLegalMoves(currentTurn, gameBoard);
+    const boardId = isSolutionBoard ? 'solutionBoard' : 'solveBoard';
+    clearSelection(isSolutionBoard);
+    const selectedId = `${boardId}-square-${row}-${col}`;
+    document.getElementById(selectedId)?.classList.add('selected');
+    legalMoves.forEach(move => {
+        if (move.from.row === row && move.from.col === col) {
+            const moveId = `${boardId}-square-${move.to.row}-${move.to.col}`;
+            document.getElementById(moveId)?.classList.add('possible-move');
+        }
+    });
+} const legalMoves = getLegalMoves(currentTurn, gameBoard); const boardId = isSolutionBoard ? 'solutionBoard' : 'solveBoard'; legalMoves.forEach(move => { if (move.from.row === row && move.from.col === col) document.getElementById(`${boardId}-square-${move.to.row}-${move.to.col}`).classList.add('possible-move'); }); }
         function clearSelection(isSolutionBoard = false) { selectedSquare = null; const boardId = isSolutionBoard ? 'solutionBoard' : 'solveBoard'; document.querySelectorAll(`#${boardId} .selected, #${boardId} .possible-move`).forEach(el => el.classList.remove('selected', 'possible-move')); }
         function highlightKingInCheck() { document.querySelectorAll('.king-in-check').forEach(el => el.classList.remove('king-in-check')); if (isKingInCheck(currentTurn, gameBoard)) { const king = currentTurn === 'white' ? 'K' : 'k'; for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) if (gameBoard[r][c] === king) document.getElementById(`solveBoard-square-${r}-${c}`).classList.add('king-in-check'); } }
         function updateNotations() { const box = document.getElementById('notationsBox'); box.innerHTML = moveHistory.map((m, i) => `${Math.floor(i / 2) + 1}. ${i % 2 === 0 ? m : '...' + m}`).join(' '); box.scrollTop = box.scrollHeight; }
