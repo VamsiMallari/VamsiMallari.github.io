@@ -6,10 +6,10 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 
 # Setup Firebase
-creds = json.loads(os.environ.get("FIREBASE_CREDENTIALS", "{}"))
-cred = credentials.Certificate(creds)
-if not firebase_admin._apps:
-    firebase_admin.initialize_app(cred)
+import sys
+cred_path = sys.argv[1]
+cred = credentials.Certificate(cred_path)
+firebase_admin.initialize_app(cred)
 db = firestore.client()
 
 # Delete puzzles older than 1 month
@@ -26,8 +26,7 @@ for doc in docs:
         else:
             try:
                 created_date = datetime.datetime.fromisoformat(str(created)).date()
-            except Exception as e:
-                print(f"Could not parse date for doc {doc.id}: {e}")
+            except:
                 continue
         if created_date < cutoff_date:
             doc.reference.delete()
@@ -35,20 +34,15 @@ for doc in docs:
 # Fetch puzzle from Lichess API
 response = requests.get("https://lichess.org/api/puzzle/daily")
 if response.status_code != 200:
-    raise Exception(f"Failed to fetch puzzle from Lichess: {response.status_code} {response.text}")
+    raise Exception("Failed to fetch puzzle from Lichess")
 
 lichess_data = response.json()
-game = lichess_data.get("game", {})
-puzzle = lichess_data.get("puzzle", {})
-
-# Check for 'fen' key
-fen = game.get("fen")
-if not fen:
-    print("Error: 'fen' key missing in the 'game' data from Lichess API. Skipping upload.")
-    exit(1)
+game = lichess_data['game']
+puzzle = lichess_data['puzzle']
 
 # Convert FEN to board format
-rows = fen.split("/")[0:8]
+fen = game["fen"].split()[0]
+rows = fen.split("/")
 board = {}
 for i, row in enumerate(rows):
     board_row = []
@@ -67,7 +61,7 @@ puzzle_data = {
     "board": board,
     "createdBy": "LichessAPI",
     "hasSolutions": True,
-    "solutions": { "0": puzzle.get("solution", []) },
+    "solutions": { "0": puzzle["solution"] },
     "createdAt": firestore.SERVER_TIMESTAMP
 }
 
