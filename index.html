@@ -3,41 +3,113 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chess Puzzles Hub</title>
+    <title>Global Chess Puzzles Hub</title>
+    <!-- Tailwind CSS CDN for modern styling -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.3.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.3.1/firebase-firestore-compat.js"></script>
-
-    <!-- Firebase SDK -->
-    <script type="module">
-        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-        import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, setDoc, onSnapshot, query, orderBy, getDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
-        
-        const firebaseConfig = {
-            apiKey: "AIzaSyCuSurKpIMGQv8-yu4txJE_8_KZk5lSJ3w",
-            authDomain: "chess-puzzels-rkv.firebaseapp.com",
-            projectId: "chess-puzzels-rkv",
-            storageBucket: "chess-puzzels-rkv.firebasestorage.app",
-            messagingSenderId: "130806565295",
-            appId: "1:130806565295:web:6f09088b2072e815ecc75a",
-            measurementId: "G-87H1RF04D7"
-        };
-// Initialize Firebase
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
-window.db = db;
-window.firestore = firebase.firestore;
-
-
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        
-        window.db = db;
-        window.firestore = { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, setDoc, onSnapshot, query, orderBy, getDoc };
-        
-        window.initializeChessApp();
-    </script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f2f5; /* Light gray background */
+        }
+        .container {
+            max-width: 90%;
+            margin: 2rem auto;
+            padding: 1.5rem;
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+        @media (min-width: 768px) {
+            .container {
+                flex-direction: row;
+                justify-content: space-between;
+                align-items: flex-start;
+            }
+        }
+        .section {
+            flex: 1;
+            padding: 1rem;
+            border-radius: 8px;
+            background-color: #f9fafb;
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+        .puzzle-card {
+            background-color: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+        .puzzle-card:last-child {
+            margin-bottom: 0;
+        }
+        .button-primary {
+            background-color: #4f46e5; /* Indigo 600 */
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: background-color 0.2s ease-in-out, transform 0.1s ease-in-out;
+            box-shadow: 0 4px 10px rgba(79, 70, 229, 0.2);
+        }
+        .button-primary:hover {
+            background-color: #4338ca; /* Indigo 700 */
+            transform: translateY(-1px);
+        }
+        .button-primary:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 5px rgba(79, 70, 229, 0.3);
+        }
+        input, textarea, select {
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            padding: 0.6rem 1rem;
+            width: 100%;
+            font-size: 1rem;
+            color: #374151;
+            transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        }
+        input:focus, textarea:focus, select:focus {
+            outline: none;
+            border-color: #6366f1; /* Indigo 500 */
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+        }
+        .loading-spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-top: 4px solid #4f46e5;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 1rem auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .message-box {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #34d399; /* Green 400 */
+            color: white;
+            padding: 1rem 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            z-index: 1000;
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out;
+        }
+        .message-box.show {
+            opacity: 1;
+        }
+        /* Styles from original index.html for chess board */
         .chess-square { width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; font-size: 32px; cursor: pointer; user-select: none; border: 1px solid #333; }
         .light-square { background-color: #f0d9b5; }
         .dark-square { background-color: #b58863; }
@@ -55,43 +127,308 @@ window.firestore = firebase.firestore;
         details > summary { list-style: none; }
         details > summary::-webkit-details-marker { display: none; }
     </style>
-
-<!-- Firebase SDKs -->
-<script src="https://www.gstatic.com/firebasejs/10.3.1/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.3.1/firebase-firestore-compat.js"></script>
-
 </head>
 <body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen">
     <!-- Overlays and Modals -->
-    <div id="loadingOverlay" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"><div class="bg-white p-8 rounded-lg shadow-xl text-center"><div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div><h3 class="text-lg font-semibold text-gray-800">Loading Chess Puzzles Hub...</h3><p class="text-gray-600 mt-2">Connecting to cloud database</p></div></div>
-    <div id="loginModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden"><div class="bg-white p-8 rounded-lg shadow-xl max-w-md w-full mx-4"><h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Welcome to Chess Puzzles Hub</h2><div class="mb-4"><label class="block text-gray-700 text-sm font-bold mb-2">Enter Your Name:</label><input type="text" id="userName" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500" placeholder="Your unique name for today"></div><div id="nameError" class="text-red-500 text-sm mb-4 hidden">This name has already been used today. Please choose another name.</div><button onclick="enterSite()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Enter Site</button></div></div>
-    <nav class="bg-white shadow-lg"><div class="max-w-7xl mx-auto px-4"><div class="flex justify-between items-center py-4"><h1 class="text-2xl font-bold text-gray-800">Chess Puzzles Hub</h1><div class="flex space-x-4"><button onclick="showSection('create')" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition duration-200">Create Puzzle</button><button onclick="showSection('puzzles')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition duration-200">View Puzzles</button><button onclick="showSection('results')" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition duration-200">Results</button></div><div class="text-gray-600">Welcome, <span id="currentUser" class="font-semibold"></span></div></div></div></nav>
+    <div id="loadingOverlay" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white p-8 rounded-lg shadow-xl text-center">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <h3 class="text-lg font-semibold text-gray-800">Loading Chess Puzzles Hub...</h3>
+            <p class="text-gray-600 mt-2">Connecting to cloud database</p>
+        </div>
+    </div>
+
+    <div id="loginModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white p-8 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Welcome to Chess Puzzles Hub</h2>
+            <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2">Enter Your Name:</label>
+                <input type="text" id="userName" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500" placeholder="Your unique name for today">
+            </div>
+            <div id="nameError" class="text-red-500 text-sm mb-4 hidden">This name has already been used today. Please choose another name.</div>
+            <button onclick="enterSite()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Enter Site</button>
+        </div>
+    </div>
+
+    <nav class="bg-white shadow-lg">
+        <div class="max-w-7xl mx-auto px-4">
+            <div class="flex justify-between items-center py-4">
+                <h1 class="text-2xl font-bold text-gray-800">Chess Puzzles Hub</h1>
+                <div class="flex space-x-4">
+                    <button onclick="showSection('create')" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition duration-200">Create Puzzle</button>
+                    <button onclick="showSection('puzzles')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition duration-200">View Puzzles</button>
+                    <button onclick="showSection('results')" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition duration-200">Results</button>
+                </div>
+                <div class="text-gray-600">Welcome, <span id="currentUser" class="font-semibold"></span></div>
+            </div>
+        </div>
+    </nav>
 
     <!-- Sections -->
     <div id="createSection" class="max-w-6xl mx-auto p-6 hidden">
         <h2 class="text-3xl font-bold text-gray-800 mb-6">Create New Puzzle</h2>
-        <div class="bg-white rounded-lg shadow-lg p-6"><div class="grid grid-cols-1 lg:grid-cols-2 gap-8"><div><div class="mb-4"><label class="block text-gray-700 text-sm font-bold mb-2">Puzzle Title:</label><input type="text" id="puzzleTitle" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500" placeholder="Enter puzzle title"></div><div class="mb-4"><label class="block text-gray-700 text-sm font-bold mb-2">Description:</label><textarea id="puzzleDescription" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 h-24" placeholder="Describe the puzzle objective"></textarea></div><div class="mb-4"><label class="block text-gray-700 text-sm font-bold mb-2">First Move:</label><select id="firstMove" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"><option value="white">White to move</option><option value="black">Black to move</option></select></div><div class="flex space-x-4"><button onclick="saveWithSolution()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-lg transition duration-200">Save with Solution</button><button onclick="saveWithoutSolution()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg transition duration-200">Save without Solution</button><button onclick="clearBoard()" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded-lg transition duration-200">Clear Board</button></div></div><div><h3 class="text-lg font-semibold mb-4">Setup Chess Board</h3><div class="mb-4"><h4 class="text-sm font-semibold mb-2">Black Pieces:</h4><div class="piece-bank"><div class="piece-bank-item" onclick="selectPieceFromBank('♛')">♛</div><div class="piece-bank-item" onclick="selectPieceFromBank('♜')">♜</div><div class="piece-bank-item" onclick="selectPieceFromBank('♝')">♝</div><div class="piece-bank-item" onclick="selectPieceFromBank('♞')">♞</div><div class="piece-bank-item" onclick="selectPieceFromBank('♟')">♟</div><div class="piece-bank-item" onclick="selectPieceFromBank('♚')">♚</div></div></div><div class="chess-board-container mb-4"><div id="createBoard"></div></div><div class="mb-4"><h4 class="text-sm font-semibold mb-2">White Pieces:</h4><div class="piece-bank"><div class="piece-bank-item" onclick="selectPieceFromBank('♕')">♕</div><div class="piece-bank-item" onclick="selectPieceFromBank('♖')">♖</div><div class="piece-bank-item" onclick="selectPieceFromBank('♗')">♗</div><div class="piece-bank-item" onclick="selectPieceFromBank('♘')">♘</div><div class="piece-bank-item" onclick="selectPieceFromBank('♙')">♙</div><div class="piece-bank-item" onclick="selectPieceFromBank('♔')">♔</div><div class="piece-bank-item" onclick="selectPieceFromBank('❌')" style="color: red;">❌</div></div></div></div></div></div>
+        <div class="bg-white rounded-lg shadow-lg p-6">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div>
+                    <div class="mb-4">
+                        <label class="block text-gray-700 text-sm font-bold mb-2">Puzzle Title:</label>
+                        <input type="text" id="puzzleTitle" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500" placeholder="Enter puzzle title">
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-gray-700 text-sm font-bold mb-2">Description:</label>
+                        <textarea id="puzzleDescription" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 h-24" placeholder="Describe the puzzle objective"></textarea>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-gray-700 text-sm font-bold mb-2">First Move:</label>
+                        <select id="firstMove" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500">
+                            <option value="white">White to move</option>
+                            <option value="black">Black to move</option>
+                        </select>
+                    </div>
+                    <div class="flex space-x-4">
+                        <button onclick="saveWithSolution()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-lg transition duration-200">Save with Solution</button>
+                        <button onclick="saveWithoutSolution()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg transition duration-200">Save without Solution</button>
+                        <button onclick="clearBoard()" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded-lg transition duration-200">Clear Board</button>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="text-lg font-semibold mb-4">Setup Chess Board</h3>
+                    <div class="mb-4">
+                        <h4 class="text-sm font-semibold mb-2">Black Pieces:</h4>
+                        <div class="piece-bank">
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♛')">♛</div>
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♜')">♜</div>
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♝')">♝</div>
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♞')">♞</div>
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♟')">♟</div>
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♚')">♚</div>
+                        </div>
+                    </div>
+                    <div class="chess-board-container mb-4">
+                        <div id="createBoard"></div>
+                    </div>
+                    <div class="mb-4">
+                        <h4 class="text-sm font-semibold mb-2">White Pieces:</h4>
+                        <div class="piece-bank">
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♕')">♕</div>
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♖')">♖</div>
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♗')">♗</div>
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♘')">♘</div>
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♙')">♙</div>
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♔')">♔</div>
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('❌')" style="color: red;">❌</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
-    <div id="puzzlesSection" class="max-w-6xl mx-auto p-6"><h2 class="text-3xl font-bold text-gray-800 mb-6">Today's Puzzles</h2><div id="todayPuzzlesList" class="space-y-6"></div><div id="archiveContainer" class="mt-12"></div></div>
-    <div id="resultsSection" class="max-w-6xl mx-auto p-6 hidden"><h2 class="text-3xl font-bold text-gray-800 mb-6">Puzzle Results</h2><div id="resultsList" class="space-y-6"></div></div>
+    <div id="puzzlesSection" class="max-w-6xl mx-auto p-6">
+        <h2 class="text-3xl font-bold text-gray-800 mb-6">Today's Puzzles</h2>
+        <div id="todayPuzzlesList" class="space-y-6"></div>
+        <div id="archiveContainer" class="mt-12"></div>
+    </div>
+    <div id="resultsSection" class="max-w-6xl mx-auto p-6 hidden">
+        <h2 class="text-3xl font-bold text-gray-800 mb-6">Puzzle Results</h2>
+        <div id="resultsList" class="space-y-6"></div>
+    </div>
 
     <!-- Modals -->
-    <div id="solveModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden"><div class="bg-white p-6 rounded-lg shadow-xl max-w-5xl w-full mx-4 max-h-[95vh] overflow-y-auto"><div class="flex justify-between items-center mb-6"><h3 id="solvePuzzleTitle" class="text-2xl font-bold text-gray-800"></h3><div class="flex items-center space-x-4"><div class="bg-blue-100 px-4 py-2 rounded-lg"><span class="text-sm font-semibold text-blue-800">Time: </span><span id="puzzleTimer" class="text-lg font-bold text-blue-900">00:00</span></div><button onclick="closeSolveModal()" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button></div></div><div class="flex flex-col items-center"><div id="solveBoard" class="inline-block border-2 border-gray-800 mb-6"></div><div class="w-full max-w-2xl mb-6"><h4 class="text-lg font-semibold mb-3 text-center">Puzzle Description</h4><div id="solvePuzzleDescription" class="bg-gray-50 p-4 rounded-lg text-center"></div></div><div class="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full max-w-4xl"><div><h4 class="text-lg font-semibold mb-2">Move Notations</h4><div id="notationsBox" class="bg-gray-100 p-4 rounded-lg h-32 overflow-y-auto text-sm font-mono mb-4"></div><div class="flex space-x-4 justify-center"><button onclick="submitSolution()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Submit Solution</button><button onclick="resetPuzzle()" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Reset</button></div></div><div><h4 class="text-lg font-semibold mb-2">Chess Notation Guide</h4><div class="text-sm text-gray-600 bg-blue-50 p-4 rounded-lg"><ul class="space-y-1"><li>• <strong>K</strong>=King, <strong>Q</strong>=Queen, <strong>R</strong>=Rook, <strong>B</strong>=Bishop, <strong>N</strong>=Knight</li><li>• <strong>+</strong> = Check, <strong>#</strong> = Checkmate</li><li>• <strong>O-O</strong> = Kingside castling, <strong>O-O-O</strong> = Queenside castling</li><li>• <strong>x</strong> = Capture, <strong>=</strong> = Promotion</li></ul></div></div></div></div></div></div>
-    <div id="resultsDisplayModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden"><div class="bg-white p-6 rounded-lg shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] flex flex-col"><div class="flex justify-between items-center mb-4"><h3 id="resultsModalTitle" class="text-2xl font-bold text-gray-800"></h3><button onclick="closeResultsDisplayModal()" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button></div><p class="text-green-600 font-semibold mb-4 text-center">Your solution has been submitted successfully!</p><div id="resultsModalContent" class="overflow-y-auto flex-grow space-y-3"></div><div class="mt-6 text-center"><button onclick="closeResultsDisplayModal()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg">Close</button></div></div></div>
-    <div id="solutionCountModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden"><div class="bg-white p-8 rounded-lg shadow-xl max-w-md w-full mx-4"><h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Number of Solutions</h2><div class="mb-6"><label class="block text-gray-700 text-sm font-bold mb-2">How many solutions do you want to provide?</label><select id="solutionCount" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"><option value="1">1 Solution</option><option value="2">2 Solutions</option></select></div><div class="flex space-x-4"><button onclick="startSolutionCapture()" class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Continue</button><button onclick="closeSolutionCountModal()" class="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Cancel</button></div></div></div>
-    <div id="solutionCaptureModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden"><div class="bg-white p-6 rounded-lg shadow-xl max-w-5xl w-full mx-4 max-h-[95vh] overflow-y-auto"><div class="flex justify-between items-center mb-6"><h3 id="solutionCaptureTitle" class="text-2xl font-bold text-gray-800">Provide Solution</h3><button onclick="closeSolutionCaptureModal()" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button></div><div class="flex flex-col items-center"><div id="solutionBoard" class="inline-block border-2 border-gray-800 mb-6"></div><div class="w-full max-w-2xl mb-6"><h4 class="text-lg font-semibold mb-3 text-center">Solution Moves</h4><div id="solutionNotationsBox" class="bg-gray-100 p-4 rounded-lg h-32 overflow-y-auto text-sm font-mono mb-4"></div><div class="flex space-x-4 justify-center"><button onclick="saveSolutionMoves()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Save Solution</button><button onclick="resetSolutionBoard()" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Reset</button></div></div></div></div></div>
-    <div id="passwordModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden"><div class="bg-white p-8 rounded-lg shadow-xl max-w-md w-full mx-4"><h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Admin Access Required</h2><div class="mb-4"><label class="block text-gray-700 text-sm font-bold mb-2">Enter Password:</label><div class="relative"><input type="password" id="adminPassword" class="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500" placeholder="Enter admin password"><button type="button" onclick="togglePasswordVisibility()" class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"><svg id="eyeIcon" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg><svg id="eyeOffIcon" class="h-5 w-5 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" /></svg></button></div></div><div id="passwordError" class="text-red-500 text-sm mb-4 hidden">Incorrect password. Please try again.</div><div class="flex space-x-4"><button onclick="verifyPassword()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Access</button><button onclick="closePasswordModal()" class="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Cancel</button></div></div></div>
+    <div id="solveModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white p-6 rounded-lg shadow-xl max-w-5xl w-full mx-4 max-h-[95vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-6">
+                <h3 id="solvePuzzleTitle" class="text-2xl font-bold text-gray-800"></h3>
+                <div class="flex items-center space-x-4">
+                    <div class="bg-blue-100 px-4 py-2 rounded-lg">
+                        <span class="text-sm font-semibold text-blue-800">Time: </span>
+                        <span id="puzzleTimer" class="text-lg font-bold text-blue-900">00:00</span>
+                    </div>
+                    <button onclick="closeSolveModal()" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+                </div>
+            </div>
+            <div class="flex flex-col items-center">
+                <div id="solveBoard" class="inline-block border-2 border-gray-800 mb-6"></div>
+                <div class="w-full max-w-2xl mb-6">
+                    <h4 class="text-lg font-semibold mb-3 text-center">Puzzle Description</h4>
+                    <div id="solvePuzzleDescription" class="bg-gray-50 p-4 rounded-lg text-center"></div>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full max-w-4xl">
+                    <div>
+                        <h4 class="text-lg font-semibold mb-2">Move Notations</h4>
+                        <div id="notationsBox" class="bg-gray-100 p-4 rounded-lg h-32 overflow-y-auto text-sm font-mono mb-4"></div>
+                        <div class="flex space-x-4 justify-center">
+                            <button onclick="submitSolution()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Submit Solution</button>
+                            <button onclick="resetPuzzle()" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Reset</button>
+                        </div>
+                    </div>
+                    <div>
+                        <h4 class="text-lg font-semibold mb-2">Chess Notation Guide</h4>
+                        <div class="text-sm text-gray-600 bg-blue-50 p-4 rounded-lg">
+                            <ul class="space-y-1">
+                                <li>• <strong>K</strong>=King, <strong>Q</strong>=Queen, <strong>R</strong>=Rook, <strong>B</strong>=Bishop, <strong>N</strong>=Knight</li>
+                                <li>• <strong>+</strong> = Check, <strong>#</strong> = Checkmate</li>
+                                <li>• <strong>O-O</strong> = Kingside castling, <strong>O-O-O</strong> = Queenside castling</li>
+                                <li>• <strong>x</strong> = Capture, <strong>=</strong> = Promotion</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="resultsDisplayModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white p-6 rounded-lg shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] flex flex-col">
+            <div class="flex justify-between items-center mb-4">
+                <h3 id="resultsModalTitle" class="text-2xl font-bold text-gray-800"></h3>
+                <button onclick="closeResultsDisplayModal()" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+            </div>
+            <p class="text-green-600 font-semibold mb-4 text-center">Your solution has been submitted successfully!</p>
+            <div id="resultsModalContent" class="overflow-y-auto flex-grow space-y-3"></div>
+            <div class="mt-6 text-center">
+                <button onclick="closeResultsDisplayModal()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg">Close</button>
+            </div>
+        </div>
+    </div>
+    <div id="solutionCountModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white p-8 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Number of Solutions</h2>
+            <div class="mb-6">
+                <label class="block text-gray-700 text-sm font-bold mb-2">How many solutions do you want to provide?</label>
+                <select id="solutionCount" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500">
+                    <option value="1">1 Solution</option>
+                    <option value="2">2 Solutions</option>
+                </select>
+            </div>
+            <div class="flex space-x-4">
+                <button onclick="startSolutionCapture()" class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Continue</button>
+                <button onclick="closeSolutionCountModal()" class="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Cancel</button>
+            </div>
+        </div>
+    </div>
+    <div id="solutionCaptureModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white p-6 rounded-lg shadow-xl max-w-5xl w-full mx-4 max-h-[95vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-6">
+                <h3 id="solutionCaptureTitle" class="text-2xl font-bold text-gray-800">Provide Solution</h3>
+                <button onclick="closeSolutionCaptureModal()" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+            </div>
+            <div class="flex flex-col items-center">
+                <div id="solutionBoard" class="inline-block border-2 border-gray-800 mb-6"></div>
+                <div class="w-full max-w-2xl mb-6">
+                    <h4 class="text-lg font-semibold mb-3 text-center">Solution Moves</h4>
+                    <div id="solutionNotationsBox" class="bg-gray-100 p-4 rounded-lg h-32 overflow-y-auto text-sm font-mono mb-4"></div>
+                    <div class="flex space-x-4 justify-center">
+                        <button onclick="saveSolutionMoves()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Save Solution</button>
+                        <button onclick="resetSolutionBoard()" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Reset</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="passwordModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white p-8 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Admin Access Required</h2>
+            <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2">Enter Password:</label>
+                <div class="relative">
+                    <input type="password" id="adminPassword" class="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500" placeholder="Enter admin password">
+                    <button type="button" onclick="togglePasswordVisibility()" class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600">
+                        <svg id="eyeIcon" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                        <svg id="eyeOffIcon" class="h-5 w-5 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" /></svg>
+                    </button>
+                </div>
+            </div>
+            <div id="passwordError" class="text-red-500 text-sm mb-4 hidden">Incorrect password. Please try again.</div>
+            <div class="flex space-x-4">
+                <button onclick="verifyPassword()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Access</button>
+                <button onclick="closePasswordModal()" class="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Cancel</button>
+            </div>
+        </div>
+    </div>
 
-    <script>
-        // Global variables
+    <!-- Firebase SDKs - Only one set of imports and initialization -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, setDoc, onSnapshot, query, orderBy, getDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+        import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+
+        // Global variables provided by the Canvas environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = {
+            apiKey: "AIzaSyCuSurKpIMGQv8-yu4txJE_8_KZk5lSJ3w",
+            authDomain: "chess-puzzels-rkv.firebaseapp.com",
+            projectId: "chess-puzzels-rkv",
+            storageBucket: "chess-puzzels-rkv.firebasestorage.app",
+            messagingSenderId: "130806565295",
+            appId: "1:130806565295:web:6f09088b2072e815ecc75a",
+            measurementId: "G-87H1RF04D7"
+        };
+        // The __initial_auth_token is typically provided by the Canvas environment
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // Firebase app and service instances
+        let app;
+        let db;
+        let auth;
+        let userId = 'anonymous'; // Default user ID
+
+        // Expose Firebase functions globally for use in inline event handlers
+        window.firestore = { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, setDoc, onSnapshot, query, orderBy, getDoc };
+        window.db = null; // Will be assigned after initialization
+        window.auth = null; // Will be assigned after initialization
+
+        // Global variables for game logic (from your original file)
         let currentUserName = '', usedNamesToday = JSON.parse(localStorage.getItem('usedNamesToday') || '{}'), puzzles = [], results = {}, isFirebaseReady = false, selectedSquare = null, currentTurn = 'white', gameBoard = [], moveHistory = [], currentPuzzleId = null, selectedBankPiece = null, castlingRights = { w: { k: true, q: true }, b: { k: true, q: true } }, enPassantTarget = null, isCreateAuthorized = false, isResultsAuthorized = false;
         const adminPassword = 'chessclub@rkv';
+        let solutionCaptureData = {}; // Added for solution capture flow
+
+        // --- Firebase Initialization and Authentication ---
+        async function initializeFirebaseAndAuth() {
+            try {
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                // Assign to window for global access
+                window.db = db;
+                window.auth = auth;
+
+                // Sign in anonymously if no custom token is provided
+                if (initialAuthToken) {
+                    // If you have a custom token, use it for authentication
+                    // This part might need adjustment if your environment provides a different auth mechanism
+                    // For now, we'll stick to anonymous or assume custom token is handled by Canvas
+                    console.log("Custom auth token detected, but using anonymous sign-in for simplicity.");
+                    await signInAnonymously(auth);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                userId = auth.currentUser?.uid || crypto.randomUUID(); // Get UID or generate a random one if anonymous
+                document.getElementById('currentUser').textContent = currentUserName || userId.substring(0, 8) + '...'; // Display part of UID if no name
+                console.log("Firebase initialized and user signed in:", userId);
+
+                isFirebaseReady = true;
+                document.getElementById('loadingOverlay').classList.add('hidden');
+                document.getElementById('loginModal').classList.remove('hidden');
+
+                // Load initial data after Firebase is ready
+                await loadUserNamesFromFirestore();
+                loadPuzzlesAndResults(); // Start listening for puzzles and results
+            } catch (error) {
+                console.error("Error initializing Firebase or signing in:", error);
+                document.getElementById('loadingOverlay').classList.add('hidden');
+                alert('Failed to connect to cloud database. Please check console for details.');
+                isFirebaseReady = false;
+                document.getElementById('loginModal').classList.remove('hidden');
+            }
+        }
 
         // --- Firestore and Data Handling ---
         async function savePuzzleToFirestore(puzzleData) {
             try {
-                const puzzlesCollection = window.firestore.collection(window.db, 'puzzles');
-                const docRef = await window.firestore.addDoc(puzzlesCollection, { ...puzzleData, createdAt: new Date() });
+                // Use the correct collection path for public data
+                const puzzlesCollection = collection(db, `artifacts/${appId}/public/data/puzzles`);
+                const docRef = await addDoc(puzzlesCollection, { ...puzzleData, createdAt: new Date() });
                 console.log('Puzzle saved to Firestore with ID:', docRef.id);
                 return { id: docRef.id, ...puzzleData };
             } catch (error) {
@@ -100,10 +437,12 @@ window.firestore = firebase.firestore;
                 throw error;
             }
         }
+
         async function saveResultToFirestore(puzzleId, resultData) {
             try {
-                const resultDocRef = window.firestore.doc(window.db, 'results', puzzleId);
-                const docSnap = await window.firestore.getDoc(resultDocRef);
+                // Use the correct collection path for public results
+                const resultDocRef = doc(db, `artifacts/${appId}/public/data/results`, puzzleId);
+                const docSnap = await getDoc(resultDocRef);
                 let submissions = docSnap.exists() ? docSnap.data().submissions || [] : [];
                 submissions.push(resultData);
                 submissions.sort((a, b) => {
@@ -112,7 +451,7 @@ window.firestore = firebase.firestore;
                     if (a.isCorrect && b.isCorrect) return a.timeSpent - b.timeSpent;
                     return 0;
                 });
-                await window.firestore.setDoc(resultDocRef, { puzzleId, submissions, lastUpdated: new Date() }, { merge: true });
+                await setDoc(resultDocRef, { puzzleId, submissions, lastUpdated: new Date() }, { merge: true });
                 console.log('Result saved to Firestore for puzzle:', puzzleId);
             } catch (error) {
                 console.error('Error saving result to Firestore:', error);
@@ -120,19 +459,23 @@ window.firestore = firebase.firestore;
                 throw error;
             }
         }
+
         async function saveUserNamesToFirestore() {
             try {
                 const today = new Date().toISOString().split('T')[0];
-                const userNamesDocRef = window.firestore.doc(window.db, 'userNames', today);
-                await window.firestore.setDoc(userNamesDocRef, { names: usedNamesToday[new Date().toDateString()] || [] });
+                // Use the correct collection path for public user names
+                const userNamesDocRef = doc(db, `artifacts/${appId}/public/data/userNames`, today);
+                await setDoc(userNamesDocRef, { names: usedNamesToday[new Date().toDateString()] || [] }, { merge: true });
             } catch (error) { console.error('Error saving user names to Firestore:', error); }
         }
+
         async function loadUserNamesFromFirestore() {
             try {
                 const today = new Date().toISOString().split('T')[0];
                 const todayString = new Date().toDateString();
-                const userNamesDocRef = window.firestore.doc(window.db, 'userNames', today);
-                const docSnap = await window.firestore.getDoc(userNamesDocRef);
+                // Use the correct collection path for public user names
+                const userNamesDocRef = doc(db, `artifacts/${appId}/public/data/userNames`, today);
+                const docSnap = await getDoc(userNamesDocRef);
                 if (docSnap.exists()) {
                     const cloudNames = docSnap.data().names || [];
                     const localNames = usedNamesToday[todayString] || [];
@@ -140,55 +483,71 @@ window.firestore = firebase.firestore;
                 }
             } catch (error) { console.error('Error loading user names from Firestore:', error); }
         }
-        window.initializeChessApp = async function() {
-            try {
-                await loadUserNamesFromFirestore();
-                const puzzlesQuery = window.firestore.query(window.firestore.collection(window.db, 'puzzles'), window.firestore.orderBy('createdAt', 'desc'));
-                window.firestore.onSnapshot(puzzlesQuery, (snapshot) => {
-                    puzzles = snapshot.docs.map(doc => {
-                        const data = doc.data();
-                        if (data.board && !Array.isArray(data.board)) data.board = Object.values(data.board).sort((a, b) => a.key - b.key);
-                        // BUG FIX: Also convert solutions map back to array
-                        if (data.solutions && !Array.isArray(data.solutions)) data.solutions = Object.values(data.solutions);
-                        const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.createdAt);
-                        return { id: doc.id, ...data, createdAt };
-                    });
-                    if (!document.getElementById('puzzlesSection').classList.contains('hidden')) displayPuzzles();
-                    if (!document.getElementById('resultsSection').classList.contains('hidden')) displayResults();
+
+        // Combined function to load puzzles and results
+        function loadPuzzlesAndResults() {
+            // Puzzles listener
+            const puzzlesCollectionRef = collection(db, `artifacts/${appId}/public/data/puzzles`);
+            // Removed orderBy to avoid requiring an index, sort in JS
+            const puzzlesQuery = query(puzzlesCollectionRef);
+
+            onSnapshot(puzzlesQuery, (snapshot) => {
+                puzzles = snapshot.docs.map(doc => {
+                    const data = doc.data();
+                    // Ensure board is an array
+                    if (data.board && !Array.isArray(data.board)) {
+                         // Convert map-like object back to array, assuming numeric keys 0-7
+                        const boardArray = [];
+                        for (let i = 0; i < 8; i++) {
+                            boardArray.push(Object.values(data.board[i] || {})); // Assuming each row is also an object
+                        }
+                        data.board = boardArray;
+                    }
+                    // Convert solutions map back to array if it's a map
+                    if (data.solutions && !Array.isArray(data.solutions)) {
+                        data.solutions = Object.values(data.solutions);
+                    }
+                    const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : (data.createdAt ? new Date(data.createdAt) : new Date());
+                    return { id: doc.id, ...data, createdAt };
                 });
-                const resultsCollection = window.firestore.collection(window.db, 'results');
-                window.firestore.onSnapshot(resultsCollection, (snapshot) => {
-                    snapshot.docs.forEach(doc => { results[doc.id] = doc.data().submissions || []; });
-                    if (!document.getElementById('resultsSection').classList.contains('hidden')) displayResults();
-                });
-                isFirebaseReady = true;
-                document.getElementById('loadingOverlay').classList.add('hidden');
-                document.getElementById('loginModal').classList.remove('hidden');
-            } catch (error) {
-                console.error('Error initializing:', error);
-                document.getElementById('loadingOverlay').classList.add('hidden');
-                alert('Failed to connect to cloud database.');
-                isFirebaseReady = false;
-                document.getElementById('loginModal').classList.remove('hidden');
+                // Sort puzzles by creation date (newest first)
+                puzzles.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+                if (!document.getElementById('puzzlesSection').classList.contains('hidden')) displayPuzzles();
+                if (!document.getElementById('resultsSection').classList.contains('hidden')) displayResults();
+            }, (error) => {
+                console.error("Error fetching puzzles:", error);
+                // Handle error, e.g., show a message to the user
+            });
+
+            // Results listener
+            const resultsCollectionRef = collection(db, `artifacts/${appId}/public/data/results`);
+            onSnapshot(resultsCollectionRef, (snapshot) => {
+                snapshot.docs.forEach(doc => { results[doc.id] = doc.data().submissions || []; });
+                if (!document.getElementById('resultsSection').classList.contains('hidden')) displayResults();
+            }, (error) => {
+                console.error("Error fetching results:", error);
+                // Handle error
+            });
+        }
+
+        // --- Core App Logic (from your original file, with minor adjustments) ---
+
+        async function confirmDeletePuzzle(puzzleId) {
+            const password = prompt("Enter admin password to delete puzzle:");
+            if (password !== adminPassword) {
+                alert("Incorrect password.");
+                return;
             }
-        };
-
-        // --- Core App Logic ---
-
-async function confirmDeletePuzzle(puzzleId) {
-    const password = prompt("Enter admin password to delete puzzle:");
-    if (password !== adminPassword) {
-        alert("Incorrect password.");
-        return;
-    }
-    try {
-        await window.firestore.deleteDoc(window.firestore.doc(window.db, 'puzzles', puzzleId));
-        alert("Puzzle deleted successfully.");
-    } catch (e) {
-        console.error("Deletion failed", e);
-        alert("Error deleting puzzle.");
-    }
-}
+            try {
+                // Use the correct collection path for public data
+                await deleteDoc(doc(db, `artifacts/${appId}/public/data/puzzles`, puzzleId));
+                alert("Puzzle deleted successfully.");
+            } catch (e) {
+                console.error("Deletion failed", e);
+                alert("Error deleting puzzle.");
+            }
+        }
 
         const pieceSymbols = { 'K': '♔', 'Q': '♕', 'R': '♖', 'B': '♗', 'N': '♘', 'P': '♙', 'k': '♚', 'q': '♛', 'r': '♜', 'b': '♝', 'n': '♞', 'p': '♟' };
         const initialBoard = [ ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'], ['p', 'p', 'p', 'p', 'p', 'p', 'p', 'p'], ['', '', '', '', '', '', '', ''], ['', '', '', '', '', '', '', ''], ['', '', '', '', '', '', '', ''], ['', '', '', '', '', '', '', ''], ['P', 'P', 'P', 'P', 'P', 'P', 'P', 'P'], ['R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R'] ];
@@ -216,14 +575,17 @@ async function confirmDeletePuzzle(puzzleId) {
 
         // --- Puzzle Creation ---
         function initializeCreateBoard() { gameBoard = JSON.parse(JSON.stringify(initialBoard)); renderBoard('createBoard', gameBoard, handleCreateSquareClick); }
-        function handleCreateSquareClick(row, col) { if (selectedBankPiece) { const pieceMap = { '♔': 'K', '♕': 'Q', '♖': 'R', '♗': 'B', '♘': 'N', '♙': 'P', '♚': 'k', '♛': 'q', '♜': 'r', '♝': 'b', '♞': 'n', '♟': 'p' }; gameBoard[row][col] = selectedBankPiece === '❌' ? '' : Object.keys(pieceMap).find(key => pieceSymbols[pieceMap[key]] === selectedBankPiece); renderBoard('createBoard', gameBoard, handleCreateSquareClick); document.querySelectorAll('.piece-bank-item').forEach(item => item.style.backgroundColor = 'white'); selectedBankPiece = null; } }
-        function selectPieceFromBank(piece) { selectedBankPiece = piece; document.querySelectorAll('.piece-bank-item').forEach(item => item.style.backgroundColor = 'white'); event.target.style.backgroundColor = '#e3f2fd'; }
+        function handleCreateSquareClick(row, col) { if (selectedBankPiece) { const pieceMap = { '♔': 'K', '♕': 'Q', '♖': 'R', '♗': 'B', '♘': 'N', '♙': 'P', '♚': 'k', '♛': 'q', '♜': 'r', '♝': 'b', 'n': 'n', '♟': 'p' }; gameBoard[row][col] = selectedBankPiece === '❌' ? '' : Object.keys(pieceMap).find(key => pieceSymbols[pieceMap[key]] === selectedBankPiece); renderBoard('createBoard', gameBoard, handleCreateSquareClick); document.querySelectorAll('.piece-bank-item').forEach(item => item.style.backgroundColor = 'white'); selectedBankPiece = null; } }
+        function selectPieceFromBank(piece, event) { selectedBankPiece = piece; document.querySelectorAll('.piece-bank-item').forEach(item => item.style.backgroundColor = 'white'); event.currentTarget.style.backgroundColor = '#e3f2fd'; }
         function clearBoard() { gameBoard = Array(8).fill().map(() => Array(8).fill('')); renderBoard('createBoard', gameBoard, handleCreateSquareClick); }
         function validateKings() { const pieces = gameBoard.flat(); if (pieces.filter(p => p === 'K').length !== 1 || pieces.filter(p => p === 'k').length !== 1) { alert('Board must have exactly one white and one black king.'); return false; } return true; }
         async function savePuzzle(hasSolutions = false, solutions = {}) {
             const title = document.getElementById('puzzleTitle').value.trim();
             const description = document.getElementById('puzzleDescription').value.trim();
-            if (!title || !description || !validateKings()) return;
+            if (!title || !description || !validateKings()) {
+                alert('Please fill in title and description, and ensure exactly one white and one black king are on the board.');
+                return;
+            }
             const boardAsMap = {};
             gameBoard.forEach((row, index) => { boardAsMap[index] = row; });
             const puzzleData = { title, description, firstMove: document.getElementById('firstMove').value, board: boardAsMap, createdBy: currentUserName, hasSolutions, solutions };
@@ -231,33 +593,30 @@ async function confirmDeletePuzzle(puzzleId) {
             const originalText = button.textContent;
             button.textContent = 'Saving...';
             button.disabled = true;
-            try { await savePuzzleToFirestore(puzzleData); document.getElementById('puzzleTitle').value = ''; document.getElementById('puzzleDescription').value = ''; alert('Puzzle saved successfully!'); showSection('puzzles'); } catch (error) { /* Handled */ } finally { button.textContent = originalText; button.disabled = false; }
+            try { await savePuzzleToFirestore(puzzleData); document.getElementById('puzzleTitle').value = ''; document.getElementById('puzzleDescription').value = ''; alert('Puzzle saved successfully!'); showSection('puzzles'); } catch (error) { /* Handled by savePuzzleToFirestore */ } finally { button.textContent = originalText; button.disabled = false; }
         }
         function saveWithoutSolution() { savePuzzle(false, {}); }
         function saveWithSolution() {
-    if (!document.getElementById('puzzleTitle').value.trim() || !document.getElementById('puzzleDescription').value.trim() || !validateKings()) return;
-    const boardAsMap = {};
-    gameBoard.forEach((row, index) => { boardAsMap[index] = row; });
-    solutionCaptureData = {};  // RESET any stale data
-    solutionCaptureData.puzzleData = {
-        title: document.getElementById('puzzleTitle').value.trim(),
-        description: document.getElementById('puzzleDescription').value.trim(),
-        firstMove: document.getElementById('firstMove').value,
-        board: boardAsMap,
-        createdBy: currentUserName,
-        hasSolutions: true
-    };
-    document.getElementById('solutionCountModal').classList.remove('hidden');
-
-            if (!document.getElementById('puzzleTitle').value.trim() || !document.getElementById('puzzleDescription').value.trim() || !validateKings()) return;
+            if (!document.getElementById('puzzleTitle').value.trim() || !document.getElementById('puzzleDescription').value.trim() || !validateKings()) {
+                alert('Please fill in title and description, and ensure exactly one white and one black king are on the board.');
+                return;
+            }
             const boardAsMap = {};
             gameBoard.forEach((row, index) => { boardAsMap[index] = row; });
-            solutionCaptureData.puzzleData = { title: document.getElementById('puzzleTitle').value.trim(), description: document.getElementById('puzzleDescription').value.trim(), firstMove: document.getElementById('firstMove').value, board: boardAsMap, createdBy: currentUserName, hasSolutions: true };
+            solutionCaptureData = {};  // RESET any stale data
+            solutionCaptureData.puzzleData = {
+                title: document.getElementById('puzzleTitle').value.trim(),
+                description: document.getElementById('puzzleDescription').value.trim(),
+                firstMove: document.getElementById('firstMove').value,
+                board: boardAsMap,
+                createdBy: currentUserName,
+                hasSolutions: true
+            };
             document.getElementById('solutionCountModal').classList.remove('hidden');
         }
         function startSolutionCapture() { solutionCaptureData.solutionsNeeded = parseInt(document.getElementById('solutionCount').value); solutionCaptureData.currentSolution = 1; solutionCaptureData.capturedSolutions = []; document.getElementById('solutionCountModal').classList.add('hidden'); openSolutionCaptureModal(); }
         function openSolutionCaptureModal() {
-            gameBoard = Object.values(solutionCaptureData.puzzleData.board);
+            gameBoard = JSON.parse(JSON.stringify(Object.values(solutionCaptureData.puzzleData.board))); // Ensure board is deep copied and array
             moveHistory = [];
             currentTurn = solutionCaptureData.puzzleData.firstMove;
             resetCastlingRights();
@@ -273,7 +632,6 @@ async function confirmDeletePuzzle(puzzleId) {
                 solutionCaptureData.currentSolution++;
                 openSolutionCaptureModal();
             } else {
-                // BUG FIX: Convert solutions array to a map before saving
                 const solutionsAsMap = {};
                 solutionCaptureData.capturedSolutions.forEach((sol, i) => { solutionsAsMap[i] = sol; });
                 const puzzleData = { ...solutionCaptureData.puzzleData, solutions: solutionsAsMap };
@@ -286,7 +644,7 @@ async function confirmDeletePuzzle(puzzleId) {
                     closeSolutionCaptureModal();
                     alert('Puzzle with solutions saved successfully!');
                     showSection('puzzles');
-                } catch (e) { /* Handled */ }
+                } catch (e) { /* Handled by savePuzzleToFirestore */ }
                 finally { button.textContent = 'Save Solution'; button.disabled = false; }
             }
         }
@@ -319,7 +677,7 @@ async function confirmDeletePuzzle(puzzleId) {
             const puzzle = puzzles.find(p => p.id === puzzleId);
             if (!puzzle) return alert('Puzzle not found.');
             currentPuzzleId = puzzleId;
-            gameBoard = JSON.parse(JSON.stringify(puzzle.board));
+            gameBoard = JSON.parse(JSON.stringify(Object.values(puzzle.board))); // Ensure board is deep copied and array
             moveHistory = [];
             currentTurn = puzzle.firstMove;
             resetCastlingRights();
@@ -341,7 +699,7 @@ async function confirmDeletePuzzle(puzzleId) {
             const button = event.target;
             button.textContent = 'Submitting...';
             button.disabled = true;
-            try { await saveResultToFirestore(currentPuzzleId, solution); closeSolveModal(); displayResultsInModal(currentPuzzleId); } catch (e) { /* Handled */ } finally { button.textContent = 'Submit Solution'; button.disabled = false; }
+            try { await saveResultToFirestore(currentPuzzleId, solution); closeSolveModal(); displayResultsInModal(currentPuzzleId); } catch (e) { /* Handled by saveResultToFirestore */ } finally { button.textContent = 'Submit Solution'; button.disabled = false; }
         }
         function resetPuzzle() { solvePuzzle(currentPuzzleId); }
         function checkSolutionMatch(userMoves, storedSolutions) { return storedSolutions.some(solution => userMoves.length === solution.length && userMoves.every((move, i) => move === solution[i])); }
@@ -376,7 +734,7 @@ async function confirmDeletePuzzle(puzzleId) {
             const addMove = (toR, toC) => { if (toR >= 0 && toR < 8 && toC >= 0 && toC < 8) { const target = board[toR][toC]; if (!target || !isPieceColor(target, color)) moves.push({ from: { row: r, col: c }, to: { row: toR, col: toC } }); } };
             const addSliding = (dirs) => { dirs.forEach(([dr, dc]) => { let R = r + dr, C = c + dc; while (R >= 0 && R < 8 && C >= 0 && C < 8) { const target = board[R][C]; if (target) { if (!isPieceColor(target, color)) addMove(R, C); break; } addMove(R, C); R += dr; C += dc; } }); };
             switch (piece.toLowerCase()) {
-                case 'p': const dir = color === 'white' ? -1 : 1, start = color === 'white' ? 6 : 1; if (!board[r + dir][c]) { addMove(r + dir, c); if (r === start && !board[r + 2 * dir][c]) addMove(r + 2 * dir, c); } [-1, 1].forEach(dc => { if (c + dc >= 0 && c + dc < 8) { if (board[r + dir][c + dc] && !isPieceColor(board[r + dir][c + dc], color)) addMove(r + dir, c + dc); if (enPassantTarget?.row === r + dir && enPassantTarget?.col === c + dc) addMove(r + dir, c + dc); } }); break;
+                case 'p': const dir = color === 'white' ? -1 : 1, start = color === 'white' ? 6 : 1; if (r + dir >= 0 && r + dir < 8 && !board[r + dir][c]) { addMove(r + dir, c); if (r === start && !board[r + 2 * dir][c]) addMove(r + 2 * dir, c); } [-1, 1].forEach(dc => { if (c + dc >= 0 && c + dc < 8 && r + dir >= 0 && r + dir < 8) { if (board[r + dir][c + dc] && !isPieceColor(board[r + dir][c + dc], color)) addMove(r + dir, c + dc); if (enPassantTarget?.row === r + dir && enPassantTarget?.col === c + dc) addMove(r + dir, c + dc); } }); break;
                 case 'n': [[-2, -1], [-2, 1], [-1, -2], [-1, 2], [1, -2], [1, 2], [2, -1], [2, 1]].forEach(([dr, dc]) => addMove(r + dr, c + dc)); break;
                 case 'b': addSliding([[-1, -1], [-1, 1], [1, -1], [1, 1]]); break;
                 case 'r': addSliding([[-1, 0], [1, 0], [0, -1], [0, 1]]); break;
@@ -399,27 +757,27 @@ async function confirmDeletePuzzle(puzzleId) {
             boardContainer.appendChild(boardEl);
         }
         function showPossibleMoves(row, col, isSolutionBoard = false) {
-    const legalMoves = getLegalMoves(currentTurn, gameBoard);
-    const boardId = isSolutionBoard ? 'solutionBoard' : 'solveBoard';
-    clearSelection(isSolutionBoard);
-    const selectedId = `${boardId}-square-${row}-${col}`;
-    document.getElementById(selectedId)?.classList.add('selected');
-    legalMoves.forEach(move => {
-        if (move.from.row === row && move.from.col === col) {
-            const moveId = `${boardId}-square-${move.to.row}-${move.to.col}`;
-            document.getElementById(moveId)?.classList.add('possible-move');
+            const legalMoves = getLegalMoves(currentTurn, gameBoard);
+            const boardId = isSolutionBoard ? 'solutionBoard' : 'solveBoard';
+            clearSelection(isSolutionBoard);
+            const selectedId = `${boardId}-square-${row}-${col}`;
+            document.getElementById(selectedId)?.classList.add('selected');
+            legalMoves.forEach(move => {
+                if (move.from.row === row && move.from.col === col) {
+                    const moveId = `${boardId}-square-${move.to.row}-${move.to.col}`;
+                    document.getElementById(moveId)?.classList.add('possible-move');
+                }
+            });
         }
-    });
-} const legalMoves = getLegalMoves(currentTurn, gameBoard); const boardId = isSolutionBoard ? 'solutionBoard' : 'solveBoard'; legalMoves.forEach(move => { if (move.from.row === row && move.from.col === col) document.getElementById(`${boardId}-square-${move.to.row}-${move.to.col}`).classList.add('possible-move'); }); }
         function clearSelection(isSolutionBoard = false) { selectedSquare = null; const boardId = isSolutionBoard ? 'solutionBoard' : 'solveBoard'; document.querySelectorAll(`#${boardId} .selected, #${boardId} .possible-move`).forEach(el => el.classList.remove('selected', 'possible-move')); }
-        function highlightKingInCheck() { document.querySelectorAll('.king-in-check').forEach(el => el.classList.remove('king-in-check')); if (isKingInCheck(currentTurn, gameBoard)) { const king = currentTurn === 'white' ? 'K' : 'k'; for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) if (gameBoard[r][c] === king) document.getElementById(`solveBoard-square-${r}-${c}`).classList.add('king-in-check'); } }
+        function highlightKingInCheck() { document.querySelectorAll('.king-in-check').forEach(el => el.classList.remove('king-in-check')); if (isKingInCheck(currentTurn, gameBoard)) { const king = currentTurn === 'white' ? 'K' : 'k'; for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) if (gameBoard[r][c] === king) document.getElementById(`solveBoard-square-${r}-${c}`)?.classList.add('king-in-check'); } }
         function updateNotations() { const box = document.getElementById('notationsBox'); box.innerHTML = moveHistory.map((m, i) => `${Math.floor(i / 2) + 1}. ${i % 2 === 0 ? m : '...' + m}`).join(' '); box.scrollTop = box.scrollHeight; }
         function updateSolutionNotations() { const box = document.getElementById('solutionNotationsBox'); box.innerHTML = moveHistory.map((m, i) => `${Math.floor(i / 2) + 1}. ${i % 2 === 0 ? m : '...' + m}`).join(' '); box.scrollTop = box.scrollHeight; }
-        function generateNotation(fromRow, fromCol, toRow, toCol, board) { const piece = board[fromRow][fromCol]; const files = 'abcdefgh'; let notation = piece.toUpperCase() === 'P' ? '' : piece.toUpperCase(); if (board[toRow][toCol]) notation += 'x'; notation += files[toCol] + (8 - toRow); return notation; }
+        function generateNotation(fromRow, fromCol, toRow, toCol, board) { const piece = board[fromRow][fromCol]; const files = 'abcdefgh'; let notation = piece.toLowerCase() === 'p' ? '' : piece.toUpperCase(); if (board[toRow][toCol]) notation += 'x'; notation += files[toCol] + (8 - toRow); return notation; }
         function displayResults() { const list = document.getElementById('resultsList'); list.innerHTML = ''; if (Object.keys(results).length === 0) { list.innerHTML = '<div class="text-center text-gray-500 py-8">No results yet.</div>'; return; } const ids = Object.keys(results).filter(id => puzzles.some(p => p.id === id)); ids.sort((a, b) => new Date(puzzles.find(p=>p.id===b).createdAt) - new Date(puzzles.find(p=>p.id===a).createdAt)); ids.forEach(id => { const puzzle = puzzles.find(p => p.id === id); if (!puzzle) return; const card = document.createElement('div'); card.className = 'bg-white rounded-lg shadow-lg mb-4'; card.innerHTML = `<div class="p-6 cursor-pointer" onclick="toggleResultsSection('${id}')"><div class="flex justify-between items-center"><div><h3 class="text-xl font-bold">${puzzle.title}</h3><span class="text-sm text-gray-500">${results[id].length} submission(s)</span></div><svg id="arrow-${id}" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg></div></div><div id="results-${id}" class="hidden border-t p-6 space-y-3">${getResultsHTML(results[id])}</div>`; list.appendChild(card); }); }
         function displayResultsInModal(puzzleId) { const puzzle = puzzles.find(p => p.id === puzzleId); document.getElementById('resultsModalTitle').textContent = `Results for: ${puzzle.title}`; document.getElementById('resultsModalContent').innerHTML = getResultsHTML(results[puzzleId] || []); document.getElementById('resultsDisplayModal').classList.remove('hidden'); }
         function getResultsHTML(puzzleResults) { if (!puzzleResults || puzzleResults.length === 0) return '<div class="text-gray-500">No submissions yet.</div>'; const correct = puzzleResults.filter(r => r.isCorrect); let html = ''; if (correct.length > 0) { html += '<h4 class="font-semibold mb-2">Correct Solutions (Ranked)</h4>'; correct.forEach((r, i) => { const rank = ['🥇', '🥈', '🥉'][i] || `#${i + 1}`; const highlight = r.playerName === currentUserName ? 'bg-blue-100 border-blue-500' : 'bg-green-50 border-green-400'; html += `<div class="border-l-4 p-3 ${highlight}"><div class="flex justify-between"><div class="flex items-center space-x-3"><span class="text-xl w-8 text-center">${rank}</span><span class="font-semibold">${r.playerName}</span></div><span class="text-sm text-gray-600">Time: ${formatTime(r.timeSpent)}</span></div></div>`; }); } if (puzzleResults.length > correct.length) { html += '<h4 class="font-semibold mt-4 mb-2">Other Submissions</h4>'; puzzleResults.filter(r => !r.isCorrect).forEach(r => { const highlight = r.playerName === currentUserName ? 'bg-blue-100 border-blue-500' : 'bg-yellow-50 border-yellow-400'; html += `<div class="border-l-4 p-3 ${highlight}"><div class="flex justify-between"><span class="font-semibold">${r.playerName}</span><span class="text-sm text-gray-600">Time: ${formatTime(r.timeSpent)}</span></div></div>`; }); } return html; }
-        function toggleResultsSection(puzzleId) { document.getElementById(`results-${puzzleId}`).classList.toggle('hidden'); document.getElementById(`arrow-${puzzleId}`).classList.toggle('rotate-180'); }
+        function toggleResultsSection(puzzleId) { document.getElementById(`results-${puzzleId}`)?.classList.toggle('hidden'); document.getElementById(`arrow-${puzzleId}`)?.classList.toggle('rotate-180'); }
 
         // --- Timers and Modals ---
         let puzzleStartTime = null, timerInterval = null;
@@ -438,6 +796,8 @@ async function confirmDeletePuzzle(puzzleId) {
         function togglePasswordVisibility() { const input = document.getElementById('adminPassword'); input.type = input.type === 'password' ? 'text' : 'password'; }
         document.addEventListener('DOMContentLoaded', () => { document.getElementById('adminPassword').addEventListener('keypress', e => { if (e.key === 'Enter') verifyPassword(); }); document.getElementById('userName').addEventListener('keypress', e => { if (e.key === 'Enter') enterSite(); }); });
 
+        // Initialize Firebase when the window loads
+        window.onload = initializeFirebaseAndAuth;
     </script>
 </body>
 </html>
