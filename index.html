@@ -20,6 +20,12 @@
             appId: "1:130806565295:web:6f09088b2072e815ecc75a",
             measurementId: "G-87H1RF04D7"
         };
+// Initialize Firebase
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+window.db = db;
+window.firestore = firebase.firestore;
+
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
@@ -47,6 +53,11 @@
         details > summary { list-style: none; }
         details > summary::-webkit-details-marker { display: none; }
     </style>
+
+<!-- Firebase SDKs -->
+<script src="https://www.gstatic.com/firebasejs/10.3.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.3.1/firebase-firestore-compat.js"></script>
+
 </head>
 <body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen">
     <!-- Overlays and Modals -->
