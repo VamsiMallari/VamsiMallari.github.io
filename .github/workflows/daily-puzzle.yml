@@ -19,13 +19,11 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install firebase-admin requests
+        run: pip install firebase-admin requests google-cloud-firestore
 
       - name: Create Firebase credentials file
-        run: echo "$FIREBASE_CREDENTIALS" > firebase_credentials.json
-        env:
-          FIREBASE_CREDENTIALS: ${{ secrets.FIREBASE_CREDENTIALS }}
+        run: |
+          echo "${{ secrets.FIREBASE_CREDENTIALS }}" > firebase_credentials.json
 
       - name: Upload puzzle to Firestore
         run: python .github/scripts/upload_daily_puzzle.py firebase_credentials.json
-
