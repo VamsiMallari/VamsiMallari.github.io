@@ -8,6 +8,7 @@ from firebase_admin import credentials, firestore
 from google.cloud.firestore_v1 import SERVER_TIMESTAMP
 
 def log(msg):
+    """Helper function for logging messages."""
     print(f"[DailyPuzzleUploader] {msg}")
 
 # Check for credentials file argument
@@ -21,13 +22,27 @@ if not os.path.isfile(cred_path):
     sys.exit(1)
 
 # Setup Firebase
-cred = credentials.Certificate(cred_path)
-firebase_admin.initialize_app(cred)
-db = firestore.client()
+try:
+    cred = credentials.Certificate(cred_path)
+    # Initialize Firebase app
+    app = firebase_admin.initialize_app(cred)
+    db = firestore.client()
+    # Get the project ID from the initialized app
+    project_id = app.project_id
+    log(f"Firebase initialized for project: {project_id}")
+except Exception as e:
+    log(f"Error setting up Firebase: {e}")
+    sys.exit(1)
+
+# Define the full Firestore collection path for public puzzles
+# This matches the client-side path: artifacts/{appId}/public/data/puzzles
+PUZZLES_COLLECTION_PATH = f"artifacts/{project_id}/public/data/puzzles"
+log(f"Targeting Firestore collection: {PUZZLES_COLLECTION_PATH}")
 
 # Delete puzzles older than 1 month
 try:
-    puzzle_ref = db.collection("puzzles")
+    # Use the full collection path for cleanup
+    puzzle_ref = db.collection(PUZZLES_COLLECTION_PATH)
     docs = puzzle_ref.stream()
     cutoff_date = datetime.datetime.utcnow().date() - datetime.timedelta(days=30)
 
@@ -40,53 +55,66 @@ try:
                 created_date = created.date()
             else:
                 try:
-                    created_date = datetime.datetime.fromisoformat(str(created)).date()
+                    # Attempt to parse ISO format string if it's not a Firestore Timestamp
+                    created_date = datetime.datetime.fromisoformat(str(created).replace('Z', '+00:00')).date()
                 except Exception as e:
-                    log(f"Could not parse createdAt: {created}")
+                    log(f"Could not parse createdAt: {created} - {e}")
                     continue
-            if created_date and created_date < cutoff_date:
-                log(f"Deleting old puzzle: {doc.id} created at {created_date}")
-                doc.reference.delete()
+        
+        if created_date and created_date < cutoff_date:
+            log(f"Deleting old puzzle: {doc.id} created at {created_date}")
+            doc.reference.delete()
 except Exception as e:
     log(f"Error during cleanup: {e}")
 
 # Fetch puzzle from Lichess API
-response = requests.get("https://lichess.org/api/puzzle/daily")
-if response.status_code != 200:
-    raise Exception(f"Failed to fetch puzzle from Lichess: {response.status_code} {response.text}")
+try:
+    response = requests.get("https://lichess.org/api/puzzle/daily")
+    response.raise_for_status() # Raise an HTTPError for bad responses (4xx or 5xx)
+    lichess_data = response.json()
+    game = lichess_data['game']
+    puzzle = lichess_data['puzzle']
+    log("Successfully fetched daily puzzle from Lichess API.")
+except requests.exceptions.RequestException as e:
+    log(f"Failed to fetch puzzle from Lichess: {e}")
+    sys.exit(1)
+except json.JSONDecodeError as e:
+    log(f"Failed to decode Lichess API response as JSON: {e}")
+    sys.exit(1)
 
-lichess_data = response.json()
-game = lichess_data['game']
-puzzle = lichess_data['puzzle']
-
-# Convert FEN to board format
+# Convert FEN to board format (list of lists)
 fen = game["fen"].split()[0]
 rows = fen.split("/")
-board = {}
-for i, row in enumerate(rows):
+board = [] # Initialize as a list
+for row_str in rows:
     board_row = []
-    for ch in row:
+    for ch in row_str:
         if ch.isdigit():
-            board_row += [''] * int(ch)
+            board_row.extend([''] * int(ch)) # Use extend for multiple empty squares
         else:
             board_row.append(ch)
-    board[i] = board_row
+    board.append(board_row) # Append the row list to the board list
 
 # Construct Firestore-compatible puzzle format
+# Assuming puzzle["solution"] is already a list of moves from Lichess API
 puzzle_data = {
     "title": puzzle.get("name", "Daily Puzzle"),
     "description": "Solve the puzzle from the given position.",
     "firstMove": "white" if puzzle.get("initialPly", 0) % 2 == 0 else "black",
-    "board": board,
+    "board": board, # Now a list of lists
     "createdBy": "LichessAPI",
     "hasSolutions": True,
-    "solutions": { "0": puzzle["solution"] },
-    "createdAt": SERVER_TIMESTAMP
+    "solutions": puzzle["solution"], # Directly use the list from Lichess
+    "createdAt": SERVER_TIMESTAMP # Use Firestore server timestamp
 }
 
+# Upload puzzle to Firestore
 try:
-    db.collection("puzzles").add(puzzle_data)
+    # Use the full collection path for adding the document
+    db.collection(PUZZLES_COLLECTION_PATH).add(puzzle_data)
     log("Daily puzzle uploaded successfully!")
 except Exception as e:
     log(f"Error uploading puzzle: {e}")
     sys.exit(1)
+
+
