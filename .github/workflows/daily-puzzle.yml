@@ -26,4 +26,4 @@ jobs:
           echo "${{ secrets.FIREBASE_CREDENTIALS }}" > firebase_credentials.json
 
       - name: Upload Puzzle to Firestore
-        run: python upload_puzzle.py
+        run: python /.github/scripts/upload_puzzle.py
