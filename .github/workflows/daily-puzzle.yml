@@ -3,7 +3,7 @@ name: Upload Daily Puzzle
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 0 * * *"
+    - cron: "0 0 * * *"  # Every day at 00:00 UTC
 
 jobs:
   upload:
@@ -20,10 +20,7 @@ jobs:
       - name: Install dependencies
         run: pip install firebase-admin requests
 
-      - name: Export Firebase credentials
-        run: echo "FIREBASE_CREDENTIALS_B64=${{ secrets.FIREBASE_CREDENTIALS_B64 }}" >> $GITHUB_ENV
-
       - name: Upload Puzzle
         run: python upload_puzzle.py
         env:
-          FIREBASE_CREDENTIALS_B64: ${{ secrets.FIREBASE_CREDENTIALS_B64 }}
+          FIREBASE_CREDENTIALS: ${{ secrets.FIREBASE_CREDENTIALS }}
