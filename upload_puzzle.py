@@ -1,26 +1,29 @@
 import os
-import json
 import base64
+import requests
 import firebase_admin
 from firebase_admin import credentials, firestore
 from datetime import datetime
 
-# Decode base64 secret and save as a temporary JSON file
-b64_cred = os.getenv("FIREBASE_CREDENTIALS_B64")
-decoded_bytes = base64.b64decode(b64_cred)
-with open("firebase_credentials.json", "wb") as f:
-    f.write(decoded_bytes)
+# Get base64-encoded credential from environment
+b64_cred = os.getenv("FIREBASE_CREDENTIALS")
+if not b64_cred:
+    raise ValueError("FIREBASE_CREDENTIALS environment variable is not set!")
 
-# Initialize Firebase
+# Decode base64 and write to a JSON file
+with open("firebase_credentials.json", "wb") as f:
+    f.write(base64.b64decode(b64_cred))
+
+# Initialize Firebase Admin
 cred = credentials.Certificate("firebase_credentials.json")
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
-# Get the daily puzzle from Lichess
+# Fetch daily puzzle from Lichess API
 res = requests.get("https://lichess.org/api/puzzle/daily")
 data = res.json()
 
-# Prepare puzzle document
+# Structure the puzzle document
 puzzle_doc = {
     "title": data["puzzle"]["id"],
     "description": f"Daily puzzle from Lichess ({datetime.utcnow().isoformat()})",
@@ -36,4 +39,4 @@ puzzle_doc = {
 
 # Upload to Firestore
 db.collection("puzzles").add(puzzle_doc)
-print(f"Uploaded puzzle: {data['puzzle']['id']}")
+print(f"✅ Uploaded puzzle: {data['puzzle']['id']}")
