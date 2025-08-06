@@ -1,43 +1,63 @@
-import os
-import base64
 import requests
+import json
 import firebase_admin
 from firebase_admin import credentials, firestore
 from datetime import datetime
 
-# Get base64-encoded Firebase credentials
-b64_cred = os.getenv("FIREBASE_CREDENTIALS")
-if not b64_cred:
-    raise ValueError("FIREBASE_CREDENTIALS is not set!")
-
-# Decode and save as JSON file
-with open("firebase_credentials.json", "wb") as f:
-    f.write(base64.b64decode(b64_cred))
-
-# Initialize Firebase
+# Load Firebase credentials and initialize app
 cred = credentials.Certificate("firebase_credentials.json")
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
-# Get the daily puzzle from Lichess
-res = requests.get("https://lichess.org/api/puzzle/daily")
-res.raise_for_status()
-data = res.json()
+# Fetch a random puzzle from Lichess
+response = requests.get("https://lichess.org/api/puzzle/daily")
+data = response.json()
 
-# Construct document with PGN instead of FEN
-puzzle_doc = {
-    "title": data["puzzle"]["id"],
-    "description": f"Daily puzzle from Lichess ({datetime.utcnow().isoformat()})",
-    "firstMove": data["puzzle"]["initialPly"],
-    "board": {
-        "pgn": data["game"]["pgn"],
-    },
-    "createdBy": "lichess",
+puzzle = data["puzzle"]
+game = data["game"]
+
+# Generate fields
+puzzle_id = puzzle["id"]
+solution = puzzle["solution"]
+pgn = game["pgn"]
+initial_ply = puzzle["initialPly"]
+num_moves = len(solution)
+
+# Meaningful title and description
+formatted_date = datetime.utcnow().strftime("%B %d, %Y")
+title = f"Lichess Puzzle {puzzle_id.upper()}"
+description = f"{formatted_date} | {num_moves}-move chess puzzle from Lichess.org"
+
+# Convert PGN to board state
+from chess.pgn import read_game
+from io import StringIO
+import chess
+
+game_obj = read_game(StringIO(pgn))
+board = game_obj.board()
+
+for move in game_obj.mainline_moves()[:initial_ply]:
+    board.push(move)
+
+# Convert board to dict format
+board_dict = {}
+for square in chess.SQUARES:
+    piece = board.piece_at(square)
+    if piece:
+        board_dict[chess.square_name(square)] = piece.symbol()
+
+# Firestore document
+doc = {
+    "title": title,
+    "description": description,
+    "createdAt": firestore.SERVER_TIMESTAMP,
+    "firstMove": solution[0],
+    "board": board_dict,
+    "solutions": solution,
     "hasSolutions": True,
-    "solutions": data["puzzle"]["solution"],
-    "createdAt": firestore.SERVER_TIMESTAMP
+    "createdBy": "lichess automation"
 }
 
 # Upload to Firestore
-db.collection("puzzles").add(puzzle_doc)
-print(f"✅ Uploaded puzzle: {data['puzzle']['id']}")
+db.collection("puzzles").add(doc)
+print(f"Uploaded puzzle {puzzle_id} successfully.")
