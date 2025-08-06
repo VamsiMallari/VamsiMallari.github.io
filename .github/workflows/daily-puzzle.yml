@@ -2,32 +2,28 @@ name: Daily Puzzle Uploader
 
 on:
   schedule:
-    - cron: '0 3 * * *'  # 8:30 AM IST daily (adjust if needed)
-  workflow_dispatch: # Allows manual triggering from GitHub Actions tab
+    - cron: '0 3 * * *'  # 8:30 AM IST daily
+  workflow_dispatch:
 
 jobs:
   post_puzzle:
-    runs-on: ubuntu-latest # Uses the latest Ubuntu runner
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3 # Checks out your repository code
+        uses: actions/checkout@v3
 
       - name: Setup Python
-        uses: actions/setup-python@v4 # Sets up Python environment
+        uses: actions/setup-python@v4
         with:
-          python-version: '3.11' # Specifies Python version
+          python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install firebase-admin requests google-cloud-firestore # Installs required Python libraries
+        run: pip install firebase-admin requests google-cloud-firestore
 
       - name: Create Firebase credentials file
-        # This step decodes the Base64 secret and writes it to the JSON file.
-        # Using `echo` with `base64 --decode` is robust for multiline secrets.
         run: |
-          echo "${{ secrets.FIREBASE_CREDENTIALS }}" | base64 --decode > firebase_credentials.json
+          echo "${{ secrets.FIREBASE_CREDENTIALS }}" > firebase_credentials.json
 
       - name: Upload puzzle to Firestore
-        # Executes your Python script with the decoded credentials file.
         run: python .github/scripts/upload_daily_puzzle.py firebase_credentials.json
-
