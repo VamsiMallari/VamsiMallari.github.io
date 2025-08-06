@@ -1,32 +1,39 @@
-import requests
+import os
+import json
+import base64
 import firebase_admin
 from firebase_admin import credentials, firestore
 from datetime import datetime
 
-# Initialize Firebase Admin SDK
+# Decode base64 secret and save as a temporary JSON file
+b64_cred = os.getenv("FIREBASE_CREDENTIALS_B64")
+decoded_bytes = base64.b64decode(b64_cred)
+with open("firebase_credentials.json", "wb") as f:
+    f.write(decoded_bytes)
+
+# Initialize Firebase
 cred = credentials.Certificate("firebase_credentials.json")
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
 # Get the daily puzzle from Lichess
-response = requests.get("https://lichess.org/api/puzzle/daily")
-puzzle_data = response.json()
+res = requests.get("https://lichess.org/api/puzzle/daily")
+data = res.json()
 
-# Structure the puzzle data
+# Prepare puzzle document
 puzzle_doc = {
-    "title": puzzle_data['puzzle']['id'],
+    "title": data["puzzle"]["id"],
     "description": f"Daily puzzle from Lichess ({datetime.utcnow().isoformat()})",
-    "firstMove": puzzle_data['puzzle']['initialPly'],
+    "firstMove": data["puzzle"]["initialPly"],
     "board": {
-        "fen": puzzle_data['game']['fen'],
+        "fen": data["game"]["fen"],
     },
     "createdBy": "lichess",
     "hasSolutions": True,
-    "solutions": puzzle_data['puzzle']['solution'],
+    "solutions": data["puzzle"]["solution"],
     "createdAt": firestore.SERVER_TIMESTAMP
 }
 
 # Upload to Firestore
 db.collection("puzzles").add(puzzle_doc)
-
-print("Puzzle uploaded successfully.")
+print(f"Uploaded puzzle: {data['puzzle']['id']}")
