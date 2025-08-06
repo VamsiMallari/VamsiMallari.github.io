@@ -1,17 +1,16 @@
 name: Upload Daily Puzzle
 
 on:
-  workflow_dispatch:  # Manual run button in GitHub Actions
+  workflow_dispatch:
   schedule:
-    - cron: "0 0 * * *"  # Automatic run daily at 00:00 UTC (5:30 AM IST)
+    - cron: "0 0 * * *"
 
 jobs:
   upload:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -21,9 +20,10 @@ jobs:
       - name: Install dependencies
         run: pip install firebase-admin requests
 
-      - name: Create credentials file from secret
-        run: |
-          echo "${{ secrets.FIREBASE_CREDENTIALS }}" > firebase_credentials.json
+      - name: Export Firebase credentials
+        run: echo "FIREBASE_CREDENTIALS_B64=${{ secrets.FIREBASE_CREDENTIALS_B64 }}" >> $GITHUB_ENV
 
-      - name: Upload Puzzle to Firestore
+      - name: Upload Puzzle
         run: python upload_puzzle.py
+        env:
+          FIREBASE_CREDENTIALS_B64: ${{ secrets.FIREBASE_CREDENTIALS_B64 }}
