@@ -68,12 +68,11 @@ except Exception as e:
     log(f"Error during cleanup: {e}")
 
 # Fetch puzzle from Lichess API
+lichess_data = None
 try:
     response = requests.get("https://lichess.org/api/puzzle/daily")
     response.raise_for_status() # Raise an HTTPError for bad responses (4xx or 5xx)
     lichess_data = response.json()
-    game = lichess_data['game']
-    puzzle = lichess_data['puzzle']
     log("Successfully fetched daily puzzle from Lichess API.")
 except requests.exceptions.RequestException as e:
     log(f"Failed to fetch puzzle from Lichess: {e}")
@@ -81,6 +80,14 @@ except requests.exceptions.RequestException as e:
 except json.JSONDecodeError as e:
     log(f"Failed to decode Lichess API response as JSON: {e}")
     sys.exit(1)
+
+# Check if 'game' and 'fen' keys exist in the Lichess data
+if not lichess_data or 'game' not in lichess_data or 'fen' not in lichess_data['game']:
+    log("Error: Lichess API response is missing 'game' or 'fen' key. Skipping puzzle upload.")
+    sys.exit(0) # Exit successfully if no puzzle data is available
+
+game = lichess_data['game']
+puzzle = lichess_data['puzzle']
 
 # Convert FEN to board format (list of lists)
 fen = game["fen"].split()[0]
@@ -116,5 +123,3 @@ try:
 except Exception as e:
     log(f"Error uploading puzzle: {e}")
     sys.exit(1)
-
-
