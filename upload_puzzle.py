@@ -1,43 +1,49 @@
 import os
+import json
 import base64
 import requests
-import firebase_admin
-from firebase_admin import credentials, firestore
-from datetime import datetime
+import datetime
+from firebase_admin import credentials, firestore, initialize_app
 
-# Get base64-encoded Firebase credentials
-b64_cred = os.getenv("FIREBASE_CREDENTIALS")
-if not b64_cred:
-    raise ValueError("FIREBASE_CREDENTIALS is not set!")
+# Step 1: Decode Firebase credentials from base64
+encoded_creds = os.environ["FIREBASE_CREDENTIALS"]
+decoded_creds = base64.b64decode(encoded_creds).decode("utf-8")
+creds_dict = json.loads(decoded_creds)
 
-# Decode and save as JSON file
-with open("firebase_credentials.json", "wb") as f:
-    f.write(base64.b64decode(b64_cred))
-
-# Initialize Firebase
-cred = credentials.Certificate("firebase_credentials.json")
-firebase_admin.initialize_app(cred)
+# Step 2: Initialize Firebase
+cred = credentials.Certificate(creds_dict)
+initialize_app(cred)
 db = firestore.client()
 
-# Get the daily puzzle from Lichess
-res = requests.get("https://lichess.org/api/puzzle/daily")
-res.raise_for_status()
-data = res.json()
+# Step 3: Get daily puzzle from Lichess
+response = requests.get("https://lichess.org/api/puzzle/daily")
+data = response.json()
 
-# Construct document with PGN instead of FEN
-puzzle_doc = {
-    "title": data["puzzle"]["id"],
-    "description": f"Daily puzzle from Lichess ({datetime.utcnow().isoformat()})",
-    "firstMove": data["puzzle"]["initialPly"],
-    "board": {
-        "pgn": data["game"]["pgn"],
-    },
-    "createdBy": "lichess",
+puzzle = data["game"]
+puzzle_info = data["puzzle"]
+
+puzzle_id = puzzle_info["id"]
+solution = puzzle_info["solution"]
+fen = puzzle["fen"]
+first_move = solution[0]
+
+# Step 4: Create meaningful title and description
+today = datetime.datetime.now().strftime("%B %d, %Y")
+title = f"Daily Puzzle - {today}"
+description = f"Lichess puzzle of the day. Puzzle ID: {puzzle_id}"
+
+# Step 5: Prepare Firestore document
+doc = {
+    "title": title,
+    "description": description,
+    "board": {"fen": fen},
+    "firstMove": first_move,
+    "solutions": [solution],
     "hasSolutions": True,
-    "solutions": data["puzzle"]["solution"],
-    "createdAt": firestore.SERVER_TIMESTAMP
+    "createdBy": "Lichess API",
+    "createdAt": firestore.SERVER_TIMESTAMP,
 }
 
-# Upload to Firestore
-db.collection("puzzles").add(puzzle_doc)
-print(f"✅ Uploaded puzzle: {data['puzzle']['id']}")
+# Step 6: Upload to Firestore
+db.collection("puzzles").add(doc)
+print(f"✅ Puzzle uploaded with title: {title}")
