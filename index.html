@@ -352,7 +352,6 @@
         import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
 
         // Global variables provided by the Canvas environment
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         const firebaseConfig = {
             apiKey: "AIzaSyCuSurKpIMGQv8-yu4txJE_8_KZk5lSJ3w",
             authDomain: "chess-puzzels-rkv.firebaseapp.com",
@@ -362,6 +361,9 @@
             appId: "1:130806565295:web:6f09088b2072e815ecc75a",
             measurementId: "G-87H1RF04D7"
         };
+        // MODIFIED: Use projectId as fallback for appId when not in Canvas
+        const appId = typeof __app_id !== 'undefined' ? __app_id : firebaseConfig.projectId; 
+        
         // The __initial_auth_token is typically provided by the Canvas environment
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
@@ -719,7 +721,7 @@
             const color = isPieceColor(piece, 'white') ? 'w' : 'b';
             if (piece.toLowerCase() === 'k') { castlingRights[color].k = false; castlingRights[color].q = false; }
             if (fromCol === 0 && fromRow === (color === 'w' ? 7 : 0)) castlingRights[color].q = false;
-            if (fromCol === 7 && fromRow === (color === (color === 'w' ? 7 : 0))) castlingRights[color].k = false;
+            if (fromCol === 7 && fromRow === (color === 'w' ? 7 : 0)) castlingRights[color].k = false;
             enPassantTarget = piece.toLowerCase() === 'p' && Math.abs(toRow - fromRow) === 2 ? { row: (fromRow + toRow) / 2, col: fromCol } : null;
             currentTurn = currentTurn === 'white' ? 'black' : 'white';
             const boardId = isSolutionBoard ? 'solutionBoard' : 'solveBoard';
@@ -776,7 +778,7 @@
         function generateNotation(fromRow, fromCol, toRow, toCol, board) { const piece = board[fromRow][fromCol]; const files = 'abcdefgh'; let notation = piece.toLowerCase() === 'p' ? '' : piece.toUpperCase(); if (board[toRow][toCol]) notation += 'x'; notation += files[toCol] + (8 - toRow); return notation; }
         function displayResults() { const list = document.getElementById('resultsList'); list.innerHTML = ''; if (Object.keys(results).length === 0) { list.innerHTML = '<div class="text-center text-gray-500 py-8">No results yet.</div>'; return; } const ids = Object.keys(results).filter(id => puzzles.some(p => p.id === id)); ids.sort((a, b) => new Date(puzzles.find(p=>p.id===b).createdAt) - new Date(puzzles.find(p=>p.id===a).createdAt)); ids.forEach(id => { const puzzle = puzzles.find(p => p.id === id); if (!puzzle) return; const card = document.createElement('div'); card.className = 'bg-white rounded-lg shadow-lg mb-4'; card.innerHTML = `<div class="p-6 cursor-pointer" onclick="toggleResultsSection('${id}')"><div class="flex justify-between items-center"><div><h3 class="text-xl font-bold">${puzzle.title}</h3><span class="text-sm text-gray-500">${results[id].length} submission(s)</span></div><svg id="arrow-${id}" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg></div></div><div id="results-${id}" class="hidden border-t p-6 space-y-3">${getResultsHTML(results[id])}</div>`; list.appendChild(card); }); }
         function displayResultsInModal(puzzleId) { const puzzle = puzzles.find(p => p.id === puzzleId); document.getElementById('resultsModalTitle').textContent = `Results for: ${puzzle.title}`; document.getElementById('resultsModalContent').innerHTML = getResultsHTML(results[puzzleId] || []); document.getElementById('resultsDisplayModal').classList.remove('hidden'); }
-        function getResultsHTML(puzzleResults) { if (!puzzleResults || puzzleResults.length === 0) return '<div class="text-gray-500">No submissions yet.</div>'; const correct = puzzleResults.filter(r => r.isCorrect); let html = ''; if (correct.length > 0) { html += '<h4 class="font-semibold mb-2">Correct Solutions (Ranked)</h4>'; correct.forEach((r, i) => { const rank = ['🥇', '🥈', '🥉'][i] || `#${i + 1}`; const highlight = r.playerName === currentUserName ? 'bg-blue-100 border-blue-500' : 'bg-green-50 border-green-400'; html += `<div class="border-l-4 p-3 ${highlight}"><div class="flex justify-between"><div class="flex items-center space-x-3"><span class="text-xl w-8 text-center">${rank}</span><span class="font-semibold">${r.playerName}</span></div><span class="text-sm text-gray-600">Time: ${formatTime(r.timeSpent)}</span></div></div>`; `; }); } if (puzzleResults.length > correct.length) { html += '<h4 class="font-semibold mt-4 mb-2">Other Submissions</h4>'; puzzleResults.filter(r => !r.isCorrect).forEach(r => { const highlight = r.playerName === currentUserName ? 'bg-blue-100 border-blue-500' : 'bg-yellow-50 border-yellow-400'; html += `<div class="border-l-4 p-3 ${highlight}"><div class="flex justify-between"><span class="font-semibold">${r.playerName}</span><span class="text-sm text-gray-600">Time: ${formatTime(r.timeSpent)}</span></div></div>`; }); } return html; }
+        function getResultsHTML(puzzleResults) { if (!puzzleResults || puzzleResults.length === 0) return '<div class="text-gray-500">No submissions yet.</div>'; const correct = puzzleResults.filter(r => r.isCorrect); let html = ''; if (correct.length > 0) { html += '<h4 class="font-semibold mb-2">Correct Solutions (Ranked)</h4>'; correct.forEach((r, i) => { const rank = ['🥇', '🥈', '🥉'][i] || `#${i + 1}`; const highlight = r.playerName === currentUserName ? 'bg-blue-100 border-blue-500' : 'bg-green-50 border-green-400'; html += `<div class="border-l-4 p-3 ${highlight}"><div class="flex justify-between"><div class="flex items-center space-x-3"><span class="text-xl w-8 text-center">${rank}</span><span class="font-semibold">${r.playerName}</span></div><span class="text-sm text-gray-600">Time: ${formatTime(r.timeSpent)}</span></div></div>`; }); } if (puzzleResults.length > correct.length) { html += '<h4 class="font-semibold mt-4 mb-2">Other Submissions</h4>'; puzzleResults.filter(r => !r.isCorrect).forEach(r => { const highlight = r.playerName === currentUserName ? 'bg-blue-100 border-blue-500' : 'bg-yellow-50 border-yellow-400'; html += `<div class="border-l-4 p-3 ${highlight}"><div class="flex justify-between"><span class="font-semibold">${r.playerName}</span><span class="text-sm text-gray-600">Time: ${formatTime(r.timeSpent)}</span></div></div>`; }); } return html; }
         function toggleResultsSection(puzzleId) { document.getElementById(`results-${puzzleId}`)?.classList.toggle('hidden'); document.getElementById(`arrow-${puzzleId}`)?.classList.toggle('rotate-180'); }
 
         // --- Timers and Modals ---
