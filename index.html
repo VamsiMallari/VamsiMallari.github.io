@@ -358,6 +358,7 @@
         let selectedPiece = null;
         let selectedSquare = null;
         let currentTurn = 'white';
+        // FIX: gameBoard is now explicitly defined as a 2D array, which will be populated.
         let gameBoard = [];
         let moveHistory = [];
         let currentPuzzleId = null;
@@ -369,18 +370,41 @@
         let gameEnded = false;
         const adminPassword = 'chessclub@rkv';
 
+        // FIX: Function to convert 2D board array to 1D string for Firebase
+        function serializeBoard(board) {
+            return board.flat().join('');
+        }
+
+        // FIX: Function to convert 1D string from Firebase back to 2D board array
+        function deserializeBoard(boardString) {
+            const board = [];
+            for (let i = 0; i < 8; i++) {
+                const row = [];
+                for (let j = 0; j < 8; j++) {
+                    const piece = boardString[i * 8 + j];
+                    row.push(piece === ' ' ? '' : piece);
+                }
+                board.push(row);
+            }
+            return board;
+        }
+
         // Firebase helper functions - These are now primarily for writing data. Reading is handled by real-time listeners.
         
         // FIX: The savePuzzleToFirestore function is now more streamlined.
         // The real-time listener will handle updating the local 'puzzles' array.
         async function savePuzzleToFirestore(puzzleData) {
             try {
+                // FIX: Convert nested board array to a single string before saving
+                const serializedPuzzleData = {
+                    ...puzzleData,
+                    board: serializeBoard(puzzleData.board),
+                    createdAt: new Date() // Using native Date object which Firestore converts to its timestamp
+                };
+                
                 const puzzlesCollection = window.firestore.collection(window.db, 'puzzles');
                 // Add a proper server timestamp for reliable sorting
-                const docRef = await window.firestore.addDoc(puzzlesCollection, {
-                    ...puzzleData,
-                    createdAt: new Date() // Using native Date object which Firestore converts to its timestamp
-                });
+                const docRef = await window.firestore.addDoc(puzzlesCollection, serializedPuzzleData);
                 console.log('Puzzle saved to Firestore with ID:', docRef.id);
                 return { id: docRef.id, ...puzzleData };
             } catch (error) {
@@ -489,10 +513,11 @@
                 window.firestore.onSnapshot(puzzlesQuery, (snapshot) => {
                     const newPuzzles = [];
                     snapshot.forEach((doc) => {
-                        // FIX: Ensure createdAt is a JS Date object for reliable sorting later
+                        // FIX: Deserialize board string back to 2D array
                         const data = doc.data();
                         const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.createdAt);
-                        newPuzzles.push({ id: doc.id, ...data, createdAt });
+                        const board = deserializeBoard(data.board);
+                        newPuzzles.push({ id: doc.id, ...data, board, createdAt });
                     });
                     
                     puzzles = newPuzzles;
@@ -754,7 +779,7 @@
                 // Update the specific square
                 const square = document.getElementById(`create-square-${row}-${col}`);
                 if (square) {
-                    square.innerHTML = selectedBankPiece === '❌' ? '' : selectedBankPiece;
+                    square.innerHTML = pieceSymbols[gameBoard[row][col]] || '';
                 }
                 
                 // Clear selection visual feedback
@@ -1354,7 +1379,15 @@
 
             currentPuzzleId = puzzleId;
             currentPuzzleSolutions = puzzle.solutions || [];
-            gameBoard = JSON.parse(JSON.stringify(puzzle.board));
+            // FIX: Ensure gameBoard is a valid 2D array before setting it
+            gameBoard = puzzle.board ? JSON.parse(JSON.stringify(puzzle.board)) : [];
+
+            if (gameBoard.length === 0) {
+                console.error('Board data for puzzle is empty or invalid.');
+                alert('Puzzle board data is corrupted. Please select another puzzle.');
+                return;
+            }
+
             moveHistory = [];
             currentTurn = puzzle.firstMove || 'white';
             gameEnded = false;
@@ -1363,11 +1396,6 @@
             // Reset special move states
             castlingRights = { whiteKing: true, whiteQueenside: true, blackKing: true, blackQueenside: true };
             enPassantTarget = null;
-            
-            document.getElementById('solvePuzzleTitle').textContent = puzzle.title;
-            document.getElementById('solvePuzzleDescription').textContent = puzzle.description;
-            document.getElementById('notationsBox').innerHTML = '';
-            document.getElementById('puzzleTimer').textContent = '00:00';
             
             initializeSolveBoard();
             highlightKingInCheck();
@@ -1379,6 +1407,12 @@
 
         // Initialize solve board
         function initializeSolveBoard() {
+            // FIX: Check if gameBoard is valid before proceeding
+            if (!gameBoard || gameBoard.length === 0) {
+                console.error("gameBoard is not initialized. Cannot render board.");
+                return;
+            }
+
             const boardContainer = document.getElementById('solveBoard');
             boardContainer.innerHTML = '';
             
@@ -2084,7 +2118,7 @@
         function resetPuzzle() {
             const puzzle = puzzles.find(p => p.id === currentPuzzleId);
             if (puzzle) {
-                gameBoard = JSON.parse(JSON.stringify(puzzle.board));
+                gameBoard = puzzle.board ? JSON.parse(JSON.stringify(puzzle.board)) : [];
                 moveHistory = [];
                 currentTurn = puzzle.firstMove || 'white';
                 gameEnded = false;
