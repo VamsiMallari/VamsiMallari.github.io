@@ -17,15 +17,20 @@ Dependencies (the script will try to install these automatically if missing):
   - firebase-admin
   - requests
 """
-
+#!/usr/bin/env python3
 import os
 import sys
-import time
 import base64
 import json
 import tempfile
 import traceback
 from datetime import datetime, timezone, timedelta
+
+import requests
+import firebase_admin
+from firebase_admin import credentials, firestore
+import chess
+import chess.pgn
 from subprocess import check_call, CalledProcessError
 
 # Helper to install packages on the fly
