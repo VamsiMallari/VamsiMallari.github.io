@@ -3,27 +3,25 @@ name: Upload Daily Puzzle
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 0 * * *" # every day at 00:00 UTC
+    - cron: "0 0 * * *" # Runs daily at midnight UTC
 
 jobs:
   upload:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: "3.10"
 
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install requests firebase-admin python-chess
+          pip install firebase-admin requests python-chess
 
       - name: Upload Puzzle
         env:
           FIREBASE_CREDENTIALS: ${{ secrets.FIREBASE_CREDENTIALS }}
-        run: |
-          python upload_puzzle.py
+        run: python upload_puzzle.py
