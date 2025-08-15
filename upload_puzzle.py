@@ -2,201 +2,288 @@
 """
 upload_puzzle.py
 
-Fetch a puzzle from Lichess, convert to a Firestore-safe format, and upload.
-Designed to use FIREBASE_CREDENTIALS (base64-encoded JSON) from env.
+- Supports credentials via:
+    1) CLI arg: path to service account JSON (old behavior)
+    2) Environment variable FIREBASE_CREDENTIALS (base64-encoded JSON)
 
-Dependencies:
-  pip install firebase-admin requests python-chess
+- Auto-installs missing Python packages (helps GitHub Actions when a package was omitted).
+- Fetches Lichess daily puzzle, computes board position at initialPly using python-chess,
+  converts board into a Firestore-safe mapping, flattens solutions, checks duplicates,
+  and uploads to Firestore collection "puzzles".
+- Deletes puzzles older than 30 days (same behavior as your previous script).
 
-Environment:
-  FIREBASE_CREDENTIALS    - base64-encoded Firebase service account JSON
-
-Behavior:
-  - Fetches Lichess daily puzzle (https://lichess.org/api/puzzle/daily)
-  - Extracts PGN and puzzle.initialPly, uses python-chess to compute FEN at puzzle position
-  - Builds board mapping (square -> piece symbol) and a document with metadata
-  - Checks Firestore for duplicate using sourceId (lichess puzzle id)
-  - Uploads the puzzle document to Firestore collection "puzzles"
+Dependencies (the script will try to install these automatically if missing):
+  - python-chess
+  - firebase-admin
+  - requests
 """
 
 import os
+import sys
+import time
 import base64
 import json
 import tempfile
-import requests
-import sys
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from subprocess import check_call, CalledProcessError
 
-try:
-    import chess
-    import chess.pgn
-except Exception as e:
-    print("Missing python-chess. Install with: pip install python-chess", file=sys.stderr)
-    raise
+# Helper to install packages on the fly
+def ensure_package(pkg_name, import_name=None):
+    if import_name is None:
+        import_name = pkg_name
+    try:
+        __import__(import_name)
+    except ImportError:
+        print(f"[install] Missing package '{pkg_name}'. Installing...", flush=True)
+        try:
+            check_call([sys.executable, "-m", "pip", "install", pkg_name])
+            time.sleep(0.5)
+            __import__(import_name)
+            print(f"[install] Successfully installed '{pkg_name}'.", flush=True)
+        except CalledProcessError as e:
+            print(f"[install] Failed to install {pkg_name}: {e}", file=sys.stderr)
+            raise
+        except ImportError:
+            print(f"[install] Import still failing for {pkg_name} after install.", file=sys.stderr)
+            raise
 
-try:
-    import firebase_admin
-    from firebase_admin import credentials, firestore
-except Exception as e:
-    print("Missing firebase-admin. Install with: pip install firebase-admin", file=sys.stderr)
-    raise
+# Ensure critical libs
+ensure_package("requests")
+ensure_package("firebase-admin")
+ensure_package("python-chess", import_name="chess")
+
+import requests
+import firebase_admin
+from firebase_admin import credentials, firestore
+import chess
+import chess.pgn
 
 LICHESS_DAILY_URL = "https://lichess.org/api/puzzle/daily"
 FIRESTORE_COLLECTION = "puzzles"
+DELETE_OLDER_THAN_DAYS = 30
 
+def load_firebase_cred(temp_write=True):
+    """
+    Load firebase credentials either from CLI arg or from FIREBASE_CREDENTIALS env var.
+    Returns a credentials.Certificate object ready to use with firebase_admin.
+    If temp_write True, writes to a temp file and returns credentials.Certificate(temp_file).
+    """
+    # 1) CLI arg path
+    if len(sys.argv) > 1 and os.path.isfile(sys.argv[1]):
+        path = sys.argv[1]
+        print(f"[cred] Using credentials file from CLI arg: {path}")
+        return credentials.Certificate(path)
 
-def decode_firebase_creds_from_env(env_var="FIREBASE_CREDENTIALS"):
-    b64 = os.getenv(env_var)
+    # 2) FIREBASE_CREDENTIALS env (base64 or raw JSON)
+    b64 = os.getenv("FIREBASE_CREDENTIALS")
     if not b64:
-        raise RuntimeError(f"Environment variable {env_var} not set")
-    try:
-        raw = base64.b64decode(b64)
-    except Exception as e:
-        raise RuntimeError(f"Failed to base64-decode {env_var}: {e}")
-    try:
-        obj = json.loads(raw.decode("utf-8"))
-    except Exception as e:
-        # If decode fails, write raw to file and try reading as JSON
-        raise RuntimeError(f"Decoded {env_var} is not valid JSON: {e}")
-    return obj, raw
+        raise RuntimeError("No credentials provided. Provide path as first arg or set FIREBASE_CREDENTIALS (base64-encoded JSON).")
+
+    # detect if looks like raw JSON vs base64 by first non-space char
+    stripped = b64.strip()
+    json_bytes = None
+    if stripped.startswith("{"):
+        # raw JSON
+        json_bytes = stripped.encode("utf-8")
+    else:
+        # try base64 decode
+        try:
+            json_bytes = base64.b64decode(stripped)
+        except Exception as e:
+            raise RuntimeError("FIREBASE_CREDENTIALS not valid base64 or JSON.") from e
+
+    # Write to temp file since credentials.Certificate accepts a filename reliably
+    if temp_write:
+        tf = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+        tf.write(json_bytes)
+        tf.flush()
+        tf.close()
+        print(f"[cred] Wrote temp credentials to {tf.name}")
+        return credentials.Certificate(tf.name)
+    else:
+        # If you prefer passing dict directly, firebase accepts dict as well
+        try:
+            creds_dict = json.loads(json_bytes.decode("utf-8"))
+            return credentials.Certificate(creds_dict)
+        except Exception:
+            # fallback to temp file method
+            tf = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+            tf.write(json_bytes)
+            tf.flush()
+            tf.close()
+            return credentials.Certificate(tf.name)
 
 
-def init_firebase(creds_json_bytes):
-    # Write to temp file since credentials.Certificate expects a path or dict; using a temp file is robust.
-    tf = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
-    tf.write(creds_json_bytes)
-    tf.flush()
-    tf.close()
-    cred = credentials.Certificate(tf.name)
+def init_firestore():
+    cred = load_firebase_cred()
     try:
         firebase_admin.initialize_app(cred)
     except ValueError:
-        # Already initialized in this process - OK
+        # already initialized in this process
         pass
     db = firestore.client()
     return db
 
 
 def fetch_lichess_daily():
-    resp = requests.get(LICHESS_DAILY_URL, timeout=20)
-    resp.raise_for_status()
-    data = resp.json()
-    # Basic validation
-    if "puzzle" not in data or "game" not in data:
-        raise RuntimeError("Unexpected Lichess response structure (missing 'puzzle' or 'game').")
-    return data
+    print(f"[lichess] Fetching {LICHESS_DAILY_URL}")
+    r = requests.get(LICHESS_DAILY_URL, timeout=20)
+    r.raise_for_status()
+    return r.json()
 
+def pgn_to_board_mapping_and_fen(pgn_text, initial_ply):
+    """
+    Use python-chess to parse PGN and play moves up to initial_ply (half-moves).
+    Returns (fen, mapping, turn) where mapping is { 'e4': 'P', ... }
+    """
+    # parse pgn into a Game
+    try:
+        pgn_io = chess.pgn.StringIO(pgn_text)
+        game = chess.pgn.read_game(pgn_io)
+    except Exception as e:
+        raise RuntimeError("Failed to parse PGN with python-chess") from e
 
-def pgn_to_position_and_fen(pgn_text, initial_ply):
-    """
-    Returns (fen, board_mapping, turn) where:
-      - fen is FEN string of the puzzle position
-      - board_mapping is dict: square_name -> piece symbol ('P','p','K','k', etc.)
-      - turn is 'white' or 'black' (who moves next)
-    initial_ply is number of half-moves to play from the start to reach the puzzle position.
-    """
-    # Parse PGN
-    pgn_io = chess.pgn.StringIO(pgn_text)
-    game = chess.pgn.read_game(pgn_io)
     if game is None:
-        # fallback: try to parse moves by creating a chess.Board and playing SAN moves if PGN is just moves
+        # fallback: try to interpret the PGN as SAN move list in a single line
         board = chess.Board()
-        # Try simple SAN parsing from pgn_text (last resort)
-        tokens = pgn_text.strip().split()
-        ply = 0
-        for tok in tokens:
-            try:
-                board.push_san(tok)
-                ply += 1
-            except Exception:
-                # skip token if can't parse
+        moves = []
+        for token in pgn_text.strip().split():
+            # skip move numbers like '1.' '2.'
+            if token.endswith("."):
                 continue
-        # Now we have board after attempting all moves; return its FEN and mapping
-        return board.fen(), board_to_mapping(board), ('white' if board.turn == chess.WHITE else 'black')
+            # try push_san
+            try:
+                board.push_san(token)
+                moves.append(token)
+            except Exception:
+                # ignore unparsable tokens
+                pass
+        # now we have board after all moves
+    else:
+        board = game.board()
+        moves_list = list(game.mainline_moves())
+        n = int(initial_ply) if initial_ply is not None else 0
+        n = max(0, min(n, len(moves_list)))
+        for mv in moves_list[:n]:
+            board.push(mv)
 
-    # Walk moves up to initial_ply
-    board = game.board()
-    moves = list(game.mainline_moves())
-    # initial_ply might be given as an integer equal to half-move count
-    n = int(initial_ply) if initial_ply is not None else 0
-    n = max(0, min(n, len(moves)))
-    for m in moves[:n]:
-        board.push(m)
-
-    return board.fen(), board_to_mapping(board), ('white' if board.turn == chess.WHITE else 'black')
-
-
-def board_to_mapping(board):
-    """
-    Convert a python-chess Board into a dict mapping square_name -> piece symbol.
-    White pieces uppercase letters, black are lowercase single letter types:
-      chess.Piece.symbol() returns 'P', 'p', 'k', ...
-    We'll return piece.symbol() with uppercase for white, lowercase for black (python-chess does this).
-    """
+    fen = board.fen()
     mapping = {}
     for sq in chess.SQUARES:
         piece = board.piece_at(sq)
         if piece:
-            mapping[chess.square_name(sq)] = piece.symbol()  # 'P','p','K',...
-    return mapping
+            # piece.symbol(): 'P' or 'p' or 'K' etc. Keep it as-is.
+            mapping[chess.square_name(sq)] = piece.symbol()
+
+    turn = 'white' if board.turn == chess.WHITE else 'black'
+    return fen, mapping, turn
 
 
 def normalize_solutions(sol):
-    """
-    Ensure solutions is a flat list of strings suitable for Firestore.
-    Accepts a list (possibly nested) or string.
-    """
     if sol is None:
         return []
     if isinstance(sol, str):
         return [sol]
     if isinstance(sol, (list, tuple)):
-        # Flatten one level if nested arrays present
-        flat = []
+        # flatten one level
+        flattened = []
         for item in sol:
             if isinstance(item, (list, tuple)):
                 for x in item:
-                    flat.append(str(x))
+                    flattened.append(str(x))
             else:
-                flat.append(str(item))
-        return flat
+                flattened.append(str(item))
+        return flattened
     return [str(sol)]
 
 
 def puzzle_exists(db, source_id):
-    q = db.collection(FIRESTORE_COLLECTION).where("sourceId", "==", source_id).limit(1).get()
-    return len(q) > 0
+    if not source_id:
+        return False
+    try:
+        docs = db.collection(FIRESTORE_COLLECTION).where("sourceId", "==", source_id).limit(1).get()
+        return len(docs) > 0
+    except Exception as e:
+        print("[db] Duplicate check failed, continuing:", e)
+        return False
 
 
-def upload_puzzle(db, doc):
-    col = db.collection(FIRESTORE_COLLECTION)
-    added = col.add(doc)
-    return added
+def delete_old_puzzles(db, days=DELETE_OLDER_THAN_DAYS):
+    try:
+        print(f"[maintenance] Deleting puzzles older than {days} days (if any).")
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        for doc in db.collection(FIRESTORE_COLLECTION).stream():
+            data = doc.to_dict() or {}
+            created = data.get("createdAt")
+            if not created:
+                continue
+            try:
+                # created might be a datetime or Firestore Timestamp-like
+                if hasattr(created, "to_datetime"):
+                    created_dt = created.to_datetime()
+                elif hasattr(created, "replace") and hasattr(created, "isoformat"):
+                    created_dt = created
+                else:
+                    # try parse ISO string
+                    created_dt = datetime.fromisoformat(str(created))
+            except Exception:
+                continue
+            if created_dt.tzinfo is None:
+                created_dt = created_dt.replace(tzinfo=timezone.utc)
+            if created_dt < cutoff:
+                try:
+                    doc.reference.delete()
+                    print(f"[maintenance] Deleted old puzzle {doc.id}")
+                except Exception as e:
+                    print(f"[maintenance] Failed to delete {doc.id}: {e}")
+    except Exception as e:
+        print("[maintenance] Error deleting old puzzles:", e)
 
 
-def build_puzzle_document(lichess_data):
-    """
-    Build Firestore document from the Lichess puzzle JSON.
-    """
-    puzzle_info = lichess_data.get("puzzle", {})
-    game_info = lichess_data.get("game", {})
+def build_document_from_lichess(data):
+    puzzle = data.get("puzzle", {}) or {}
+    game = data.get("game", {}) or {}
 
-    pgn = game_info.get("pgn", "")
-    initial_ply = puzzle_info.get("initialPly", 0)
+    pgn = game.get("pgn", "") or ""
+    initial_ply = puzzle.get("initialPly", 0)
 
-    # Derive FEN and board mapping
-    fen, board_map, turn = pgn_to_position_and_fen(pgn, initial_ply)
+    # compute board via PGN if available
+    fen = None
+    mapping = {}
+    turn = 'white'
+    try:
+        fen, mapping, turn = pgn_to_board_mapping_and_fen(pgn, initial_ply)
+    except Exception as e:
+        print("[build] PGN parsing failed:", e)
+        # fallback if game has fen property (rare)
+        if "fen" in game and game.get("fen"):
+            try:
+                # fen may contain side to move and extra fields; keep full fen
+                f = game.get("fen")
+                # Try to convert with python-chess anyway if available
+                try:
+                    board = chess.Board(f)
+                    mapping = {}
+                    for sq in chess.SQUARES:
+                        piece = board.piece_at(sq)
+                        if piece:
+                            mapping[chess.square_name(sq)] = piece.symbol()
+                    fen = f
+                    turn = 'white' if board.turn == chess.WHITE else 'black'
+                except Exception:
+                    # best-effort fallback: store fen string and empty mapping
+                    fen = f
+            except Exception:
+                pass
 
-    # Solutions
-    solutions = normalize_solutions(puzzle_info.get("solution") or puzzle_info.get("solutions") or [])
+    solutions = normalize_solutions(puzzle.get("solution") or puzzle.get("solutions") or [])
 
-    # Title, description
-    pid = puzzle_info.get("id") or puzzle_info.get("puzzleId") or None
+    pid = puzzle.get("id") or puzzle.get("puzzleId") or None
     num_moves = len(solutions)
     today = datetime.now(timezone.utc).strftime("%B %d, %Y")
     title = f"Lichess Puzzle {pid}" if pid else f"Lichess Puzzle {today}"
-    description = f"{today} | {num_moves}-move puzzle from Lichess"
+    description = f"{today} | {num_moves}-move puzzle from Lichess.org"
 
     doc = {
         "sourceId": pid,
@@ -204,77 +291,75 @@ def build_puzzle_document(lichess_data):
         "description": description,
         "pgn": pgn,
         "fen": fen,
-        # store board as mapping (no nested arrays)
-        "board": board_map,
+        # board is a mapping (square -> piece symbol) to avoid nested arrays
+        "board": mapping,
         "firstMove": turn,
         "solutions": solutions,
-        "hasSolutions": True if len(solutions) > 0 else False,
+        "hasSolutions": True if solutions else False,
         "createdBy": "lichess",
         "createdAt": firestore.SERVER_TIMESTAMP,
     }
     return doc
 
 
-def main():
+def upload_document(db, doc):
     try:
-        creds_obj, creds_raw = decode_firebase_creds_from_env()
+        ref = db.collection(FIRESTORE_COLLECTION).add(doc)
+        print(f"[upload] Uploaded to Firestore: doc_ref = {ref[1].update_time if len(ref)>1 and hasattr(ref[1],'update_time') else ref[0].id}")
+        return True
     except Exception as e:
-        print("Firebase credentials error:", e, file=sys.stderr)
-        return 1
-
-    try:
-        db = init_firebase(creds_raw)
-    except Exception as e:
-        print("Failed to initialize Firebase:", e, file=sys.stderr)
-        traceback.print_exc()
-        return 2
-
-    # Fetch puzzle(s)
-    try:
-        lichess_data = fetch_lichess_daily()
-    except Exception as e:
-        print("Failed to fetch Lichess puzzle:", e, file=sys.stderr)
-        traceback.print_exc()
-        return 3
-
-    # Build document
-    try:
-        doc = build_puzzle_document(lichess_data)
-    except Exception as e:
-        print("Failed to build puzzle document:", e, file=sys.stderr)
-        traceback.print_exc()
-        return 4
-
-    # Duplicate check
-    if doc.get("sourceId"):
+        print("[upload] Upload failed:", e, file=sys.stderr)
+        print("[upload] Document preview keys:", list(doc.keys()))
         try:
-            if puzzle_exists(db, doc["sourceId"]):
-                print("Puzzle already exists in Firestore (sourceId:", doc["sourceId"], "). Skipping upload.")
-                return 0
-        except Exception as e:
-            print("Warning: failed duplicate check; continuing to upload. Error:", e, file=sys.stderr)
-
-    # Upload
-    try:
-        res = upload_puzzle(db, doc)
-        print("Uploaded puzzle successfully. Firestore response:", res)
-    except Exception as e:
-        print("Failed to upload puzzle to Firestore:", e, file=sys.stderr)
-        traceback.print_exc()
-        # In case of Firestore nested-arrays or other invalid data, print doc for debugging
-        try:
-            print("Document payload preview (keys):", list(doc.keys()))
-            # remove large fields
+            # show small preview for debugging
             preview = doc.copy()
-            preview["pgn"] = preview["pgn"][:200] + "..." if preview.get("pgn") and len(preview["pgn"]) > 200 else preview.get("pgn")
+            preview["pgn"] = (preview.get("pgn") or "")[:200]
             preview["board_preview_count"] = len(preview.get("board", {}))
             preview["solutions_preview"] = preview.get("solutions", [])[:10]
             print(json.dumps(preview, indent=2, default=str))
         except Exception:
             pass
-        return 5
+        return False
 
-    return 0
+
+def main():
+    try:
+        db = init_firestore()
+    except Exception as e:
+        print("[fatal] Firebase init failed:", e, file=sys.stderr)
+        traceback.print_exc()
+        return 1
+
+    # delete older puzzles (try, but don't fail run if it errors)
+    try:
+        delete_old_puzzles(db, DELETE_OLDER_THAN_DAYS)
+    except Exception as e:
+        print("[warn] delete_old_puzzles failed:", e)
+
+    # fetch lichess puzzle
+    try:
+        lichess_data = fetch_lichess_daily()
+    except Exception as e:
+        print("[fatal] Failed to fetch Lichess daily puzzle:", e, file=sys.stderr)
+        traceback.print_exc()
+        return 2
+
+    # build document
+    try:
+        doc = build_document_from_lichess(lichess_data)
+    except Exception as e:
+        print("[fatal] Failed to build puzzle document:", e, file=sys.stderr)
+        traceback.print_exc()
+        return 3
+
+    # duplicate check
+    if doc.get("sourceId"):
+        if puzzle_exists(db, doc["sourceId"]):
+            print(f"[skip] Puzzle with sourceId {doc['sourceId']} already exists. Skipping upload.")
+            return 0
+
+    ok = upload_document(db, doc)
+    return 0 if ok else 4
 
 
 if __name__ == "__main__":
