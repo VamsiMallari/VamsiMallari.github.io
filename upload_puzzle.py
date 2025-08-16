@@ -1,179 +1,173 @@
 #!/usr/bin/env python3
-import os
-import sys
-import json
+"""
+Uploads one chess puzzle to Firestore.
+
+- Uses Lichess Daily puzzle JSON (stable & public).
+- Converts UCI solution to SAN with python-chess.
+- Builds a meaningful title & description from PGN headers.
+- Stores a flat (non-nested) array of SAN moves to avoid
+  Firestore's "nested arrays not supported" error.
+- Works with base64-encoded Firebase credentials in the
+  FIREBASE_CREDENTIALS secret (GitHub Actions).
+"""
+
 import base64
-import hashlib
-import datetime
-import textwrap
+import io
+import json
+import os
+from datetime import datetime, timezone
 
-# ---- small helper to import-or-install a dependency on CI runners ----
-def ensure(pkg_name, import_name=None, version_spec=None):
-    import importlib, subprocess
-    mod_name = import_name or pkg_name
-    try:
-        return importlib.import_module(mod_name)
-    except ModuleNotFoundError:
-        pin = f"{pkg_name}{version_spec or ''}"
-        print(f"[setup] Installing {pin} ...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", pin])
-        return importlib.import_module(mod_name)
+import requests
+import chess
+import chess.pgn
 
-requests = ensure("requests")
-chess    = ensure("python-chess", import_name="chess", version_spec=">=1.999")
-firebase_admin = ensure("firebase-admin", version_spec=">=6.5")
-
+import firebase_admin
 from firebase_admin import credentials, firestore
 
-# ---------------------------------------------------------------------
-# 1) Read base64 Firebase credentials from env and init Firestore
-# ---------------------------------------------------------------------
-B64 = os.getenv("FIREBASE_CREDENTIALS")
-if not B64:
-    raise RuntimeError("FIREBASE_CREDENTIALS env var is missing (base64-encoded JSON)")
 
-CREDS_PATH = "firebase_credentials.json"
-with open(CREDS_PATH, "wb") as f:
-    f.write(base64.b64decode(B64))
+# ---------- Firebase init (from base64 secret) ----------
+def init_firebase_from_b64_env(env_key: str = "FIREBASE_CREDENTIALS") -> firestore.Client:
+    b64 = os.getenv(env_key)
+    if not b64:
+        raise RuntimeError(f"{env_key} is not set")
 
-if not firebase_admin._apps:
-    cred = credentials.Certificate(CREDS_PATH)
-    firebase_admin.initialize_app(cred)
+    path = "firebase_credentials.json"
+    with open(path, "wb") as f:
+        f.write(base64.b64decode(b64))
 
-db = firestore.client()
+    cred = credentials.Certificate(path)
+    app = firebase_admin.initialize_app(cred)
+    return firestore.client(app)
 
-# ---------------------------------------------------------------------
-# 2) Pull a puzzle from Chess.com Published Data API
-#     - daily:  https://api.chess.com/pub/puzzle
-#     - random: https://api.chess.com/pub/puzzle/random
-# ---------------------------------------------------------------------
-USE_RANDOM = False  # set True if you prefer a random daily instead of today's daily
 
-PUZZLE_URL = "https://api.chess.com/pub/puzzle" + ("/random" if USE_RANDOM else "")
-resp = requests.get(PUZZLE_URL, timeout=20)
-resp.raise_for_status()
-payload = resp.json()
+# ---------- Puzzle fetch & transform ----------
+def fetch_lichess_daily() -> dict:
+    url = "https://lichess.org/api/puzzle/daily"
+    r = requests.get(url, timeout=20)
+    r.raise_for_status()
+    return r.json()
 
-# Expected (Chess.com): title, url, publish_time, fen, pgn, image, (sometimes) solution
-# We’ll be defensive if any field is missing.
-fen = payload.get("fen")
-pgn = payload.get("pgn")
-title_from_api = payload.get("title")
-publish_ts = payload.get("publish_time")  # epoch seconds
-puzzle_url = payload.get("url")
-image_url = payload.get("image")
 
-if not fen or not pgn:
-    raise RuntimeError("Puzzle API did not return both FEN and PGN; cannot build a solvable puzzle.")
-
-# ---------------------------------------------------------------------
-# 3) Use python-chess to derive useful, frontend-friendly data
-#    - Validate FEN
-#    - Extract SAN & UCI solution (mainline only; flat list)
-# ---------------------------------------------------------------------
-try:
-    board = chess.Board(fen=fen)
-except Exception as e:
-    raise RuntimeError(f"Invalid FEN from API: {fen}\n{e}")
-
-# Parse PGN. Chess.com gives a single-game PGN string that starts from the FEN.
-# We only keep the main line (no variations) and flatten to SAN + UCI arrays.
-def parse_pgn_to_moves(pgn_str, start_board):
-    from io import StringIO
-    pgn_io = StringIO(pgn_str)
-    game = chess.pgn.read_game(pgn_io)
+def pgn_headers(pgn_text: str) -> dict:
+    game = chess.pgn.read_game(io.StringIO(pgn_text))
     if game is None:
-        # fallback: split SAN tokens heuristically (very rare)
-        return [], []
-    node = game
-    # If the PGN specifies a starting FEN in headers, python-chess will handle it,
-    # but we’ll still trust the API FEN for start position shown in UI.
-    tmp_board = start_board.copy()
-    san_moves, uci_moves = []
-    [], []
-    san_moves = []
-    uci_moves = []
-    while node.variations:
-        node = node.variations[0]
-        san = tmp_board.san(node.move)
-        san_moves.append(san)
-        uci_moves.append(node.move.uci())
-        tmp_board.push(node.move)
-    return san_moves, uci_moves
+        return {}
+    return {k: v for k, v in game.headers.items()}
 
-solutions_san, solutions_uci = parse_pgn_to_moves(pgn, board)
 
-if not solutions_san or not solutions_uci:
-    # If no moves extracted, we still publish the FEN + PGN so UI can replay,
-    # but add a warning to description.
-    warn = True
-else:
-    warn = False
+def board_at_initial_fen(pgn_text: str, initial_ply: int) -> chess.Board:
+    """Return board position just before the puzzle's first solution move."""
+    game = chess.pgn.read_game(io.StringIO(pgn_text))
+    if game is None:
+        return chess.Board()  # fallback
 
-# ---------------------------------------------------------------------
-# 4) Build a meaningful title and description
-# ---------------------------------------------------------------------
-side = "White" if board.turn == chess.WHITE else "Black"
+    board = game.board()
+    # We want state after (initial_ply - 1) half-moves.
+    target = max(0, int(initial_ply) - 1)
+    for i, mv in enumerate(game.mainline_moves()):
+        if i >= target:
+            break
+        board.push(mv)
+    return board
 
-# Try to guess mate-in-N from SAN sequence (look for trailing '#')
-mate_in = None
-for idx, san in enumerate(solutions_san, start=1):
-    if "#" in san:
-        mate_in = idx  # rough guess
-        break
 
-today_iso = datetime.date.today().isoformat()
-pretty_title = title_from_api or f"Daily Puzzle • {today_iso}"
-if mate_in:
-    pretty_title = f"Mate in {mate_in} • {side} to move"
+def uci_to_san_list(board: chess.Board, uci_moves: list[str]) -> list[str]:
+    """Convert a list of UCI strings into a flat list of SAN strings."""
+    san = []
+    b = board.copy()
+    for u in uci_moves:
+        mv = chess.Move.from_uci(u)
+        if mv not in b.legal_moves:
+            # Some puzzles include promotions without '='; normalize if needed
+            # Try to infer promotion to Queen if missing.
+            if b.is_pseudo_legal(mv):
+                pass  # allow pseudo-legal; SAN will throw if really illegal
+        san.append(b.san(mv))
+        b.push(mv)
+    return san
 
-desc_parts = [
-    f"Source: Chess.com {'Random' if USE_RANDOM else 'Daily'} Puzzle.",
-    f"Date: {today_iso}.",
-    f"Side to move: {side}.",
-]
-if puzzle_url:
-    desc_parts.append(f"Link: {puzzle_url}")
-if warn:
-    desc_parts.append("Note: solution moves could not be fully extracted; PGN is provided.")
 
-description = " ".join(desc_parts)
+def human_title(headers: dict, side_to_move: chess.Color, pid: str) -> str:
+    w = headers.get("White", "White")
+    b = headers.get("Black", "Black")
+    ev = headers.get("Event", "").strip()
+    year = headers.get("Date", "")[:4]
+    stm = "White" if side_to_move else "Black"
+    parts = [f"{w} vs {b}".strip()]
+    if ev:
+        parts.append(f"— {ev}")
+    if year and year != "????":
+        parts.append(f"({year})")
+    left = " ".join(parts).strip()
+    return f"{left} • {stm} to move • Lichess Daily #{pid}"
 
-# ---------------------------------------------------------------------
-# 5) Ensure Firestore-friendly, flat document (no nested arrays of arrays)
-#    (Your earlier error came from nested arrays in a field — this avoids that.)
-# ---------------------------------------------------------------------
-# Deterministic ID (avoid duplicates when you re-run a workflow)
-puzzle_id = hashlib.sha1(f"{fen}|{pgn}".encode("utf-8")).hexdigest()[:16]
 
-doc = {
-    "puzzleId": puzzle_id,
-    "title": pretty_title,
-    "description": description,
-    "createdBy": "chess.com",
-    "date": today_iso,
-    "createdAt": firestore.SERVER_TIMESTAMP,
+def human_description(headers: dict, dt_utc: datetime) -> str:
+    site = headers.get("Site", "")
+    result = headers.get("Result", "")
+    ev = headers.get("Event", "")
+    when = dt_utc.strftime("%Y-%m-%d")
+    bits = [f"Daily puzzle {when}"]
+    if ev:
+        bits.append(f"Event: {ev}")
+    if site:
+        bits.append(f"Site: {site}")
+    if result:
+        bits.append(f"Game result: {result}")
+    return " • ".join(bits)
 
-    # Board payload your UI can use:
-    "board": {
-        "startFen": fen,     # << explicit start FEN (UI can draw the initial position instantly)
-        "pgn": pgn,          # << full PGN for replay if your UI supports it
-    },
 
-    # Flat arrays (NO nested arrays)
-    "solutionsSan": solutions_san,   # ["Qh7+", "Kxh7", "Rh1+", ...]
-    "solutionsUci": solutions_uci,   # ["h5h7", "g8h7", ...]
-    "hasSolutions": bool(solutions_san),
+# ---------- Main ----------
+def main():
+    # 1) Firebase
+    db = init_firebase_from_b64_env()
 
-    # Optional extras for your website (all scalar or flat)
-    "image": image_url or "",
-    "sourceUrl": puzzle_url or PUZZLE_URL,
-    "tags": ["daily", "chess.com", f"{side}-to-move"] + ([f"mate-in-{mate_in}"] if mate_in else []),
-}
+    # 2) Fetch daily puzzle
+    data = fetch_lichess_daily()
+    # Expected keys:
+    # data["puzzle"]["id"], ["puzzle"]["initialPly"], ["puzzle"]["solution"] (list of UCI)
+    # data["game"]["pgn"]
 
-# ---------------------------------------------------------------------
-# 6) Upsert to Firestore ("puzzles" collection)
-# ---------------------------------------------------------------------
-ref = db.collection("puzzles").document(puzzle_id)
-ref.set(doc)
-print(f"✅ Uploaded puzzle {puzzle_id}: {pretty_title}")
+    pid = data["puzzle"]["id"]
+    initial_ply = int(data["puzzle"]["initialPly"])
+    pgn = data["game"]["pgn"]
+    solution_uci = data["puzzle"]["solution"]
+
+    # 3) Build board at puzzle start & derive SAN moves (flat list)
+    start_board = board_at_initial_fen(pgn, initial_ply)
+    san_moves = uci_to_san_list(start_board, solution_uci)
+    initial_fen = start_board.fen()
+    side = "w" if start_board.turn else "b"
+
+    # 4) Human-friendly title/description from PGN headers
+    hdr = pgn_headers(pgn)
+    now = datetime.now(timezone.utc)
+    title = human_title(hdr, start_board.turn, pid)
+    description = human_description(hdr, now)
+
+    # 5) Firestore document (no nested arrays)
+    doc = {
+        "puzzleId": pid,
+        "title": title,
+        "description": description,
+        "date": now.strftime("%Y-%m-%d"),
+        "createdAt": firestore.SERVER_TIMESTAMP,
+        "createdBy": "lichess",
+        "hasSolutions": True,
+        "firstMove": initial_ply,                 # for your existing UI
+        "solutions": san_moves,                   # flat list of SAN strings
+        "sideToMove": side,                       # "w" or "b"
+        "board": {
+            "pgn": pgn,                           # keep PGN for replay
+            "initialFen": initial_fen,            # render starting position quickly
+            "orientation": side                   # UI can orient the board
+        }
+    }
+
+    # 6) Store under /puzzles (let Firestore assign id)
+    db.collection("puzzles").add(doc)
+    print(f"✅ Uploaded Lichess Daily #{pid} with {len(san_moves)} solution moves.")
+
+
+if __name__ == "__main__":
+    main()
