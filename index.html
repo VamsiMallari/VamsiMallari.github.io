@@ -1,445 +1,2469 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Chess Puzzles Hub</title>
-  <script src="https://cdn.tailwindcss.com"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chess Puzzles Hub</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script type="module">
+        // Import Firebase modules
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, setDoc, onSnapshot, query, orderBy, getDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+        
+        // Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyCuSurKpIMGQv8-yu4txJE_8_KZk5lSJ3w",
+            authDomain: "chess-puzzels-rkv.firebaseapp.com",
+            projectId: "chess-puzzels-rkv",
+            storageBucket: "chess-puzzels-rkv.firebasestorage.app",
+            messagingSenderId: "130806565295",
+            appId: "1:130806565295:web:6f09088b2072e815ecc75a",
+            measurementId: "G-87H1RF04D7"
+        };
 
-  <!-- Firebase v10 modules -->
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getAuth, setPersistence, browserLocalPersistence, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-    import { getFirestore, collection, addDoc, setDoc, getDoc, doc, onSnapshot, query, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
-
-    // --- CONFIG ---
-    const firebaseConfig = {
-      apiKey: "AIzaSyCuSurKpIMGQv8-yu4txJE_8_KZk5lSJ3w",
-      authDomain: "chess-puzzels-rkv.firebaseapp.com",
-      projectId: "chess-puzzels-rkv",
-      storageBucket: "chess-puzzels-rkv.firebasestorage.app",
-      messagingSenderId: "130806565295",
-      appId: "1:130806565295:web:6f09088b2072e815ecc75a",
-      measurementId: "G-87H1RF04D7"
-    };
-
-    // --- Firebase init ---
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
-    const auth = getAuth(app);
-    await setPersistence(auth, browserLocalPersistence);
-
-    // Expose minimally (used by inline handlers below)
-    window._fb = { db, collection, addDoc, setDoc, getDoc, doc, onSnapshot, query, orderBy, auth,
-      signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut };
-
-    // ------------------ UI helpers ------------------
-    const $ = (id) => document.getElementById(id);
-
-    function toast(msg) {
-      console.log(msg);
-    }
-
-    // ------------------ Chess helpers ------------------
-    const PIECES = {
-      'P': '♙', 'N': '♘', 'B': '♗', 'R': '♖', 'Q': '♕', 'K': '♔',
-      'p': '♟', 'n': '♞', 'b': '♝', 'r': '♜', 'q': '♛', 'k': '♚'
-    };
-
-    function fenToBoard(fen) {
-      // returns 8x8 array of single-char piece codes or '' (empty)
-      const board = [];
-      const rows = fen.split(' ')[0].split('/');
-      for (let r = 0; r < 8; r++) {
-        const row = [];
-        for (const ch of rows[r]) {
-          if (/\d/.test(ch)) {
-            for (let i = 0; i < Number(ch); i++) row.push('');
-          } else {
-            row.push(ch);
-          }
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        
+        // Make Firebase available globally
+        window.db = db;
+        // FIX: Added getDoc to the global export for use in other functions
+        window.firestore = { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, setDoc, onSnapshot, query, orderBy, getDoc };
+        
+        // Initialize the app after Firebase is ready
+        window.initializeChessApp();
+    </script>
+    <style>
+        .chess-square {
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            cursor: pointer;
+            user-select: none;
+            border: 1px solid #333;
         }
-        board.push(row);
-      }
-      return board;
-    }
-
-    // very tiny SAN highlighter (for showing solution only)
-    function renderSANList(moves) {
-      return moves.map((m, i) => `<span class="px-1">${i+1}.${m}</span>`).join('');
-    }
-
-    // Render a board (8x8 array from fenToBoard) into a container
-    function renderBoard(board, containerId, onSquareClick) {
-      const el = $(containerId);
-      el.innerHTML = '';
-
-      const top = document.createElement('div');
-      top.className = 'flex ml-5 mb-1';
-      'abcdefgh'.split('').forEach(f => {
-        const d = document.createElement('div');
-        d.className = 'file-label';
-        d.style.width = '56px'; d.style.height = '18px';
-        d.textContent = f;
-        top.appendChild(d);
-      });
-      el.appendChild(top);
-
-      const wrap = document.createElement('div');
-      wrap.className = 'flex';
-
-      const ranks = document.createElement('div');
-      ranks.className = 'flex flex-col mr-1';
-      for (let r = 8; r >= 1; r--) {
-        const d = document.createElement('div');
-        d.className = 'rank-label';
-        d.style.width = '18px'; d.style.height = '56px';
-        d.textContent = r;
-        ranks.appendChild(d);
-      }
-      wrap.appendChild(ranks);
-
-      const grid = document.createElement('div');
-      grid.className = 'grid';
-      grid.style.gridTemplateColumns = 'repeat(8, 56px)';
-      grid.style.gridTemplateRows = 'repeat(8, 56px)';
-      grid.style.border = '2px solid #333';
-
-      for (let r = 0; r < 8; r++) {
-        for (let c = 0; c < 8; c++) {
-          const sq = document.createElement('div');
-          const light = (r + c) % 2 === 0;
-          sq.className = `flex items-center justify-center text-2xl cursor-pointer ${light ? 'bg-[#f0d9b5]' : 'bg-[#b58863]'} border border-black/20`;
-          sq.style.userSelect = 'none';
-          const p = board[r][c];
-          sq.textContent = p ? PIECES[p] || '' : '';
-          if (onSquareClick) sq.onclick = () => onSquareClick(r, c);
-          grid.appendChild(sq);
+        .light-square { background-color: #f0d9b5; }
+        .dark-square { background-color: #b58863; }
+        .chess-board-container {
+            display: inline-block;
+            position: relative;
         }
-      }
-      wrap.appendChild(grid);
-      el.appendChild(wrap);
-    }
-
-    // ------------------ App state ------------------
-    let puzzles = [];        // [{id, title, fen, sideToMove, solutionSAN, description, createdAt,...}]
-    let results = {};        // { [puzzleId]: [ {playerName, moves:[], isCorrect, timeSpent, submittedAt} ] }
-
-    // ------------------ Auth UI ------------------
-    function showAuth(isLoggedIn, user) {
-      if (isLoggedIn) {
-        $('navUser').textContent = user.email;
-        $('btnLogout').classList.remove('hidden');
-        $('btnLogin').classList.add('hidden');
-        $('loginModal').classList.add('hidden');
-      } else {
-        $('navUser').textContent = 'Guest';
-        $('btnLogout').classList.add('hidden');
-        $('btnLogin').classList.remove('hidden');
-      }
-    }
-
-    $('btnLogin').onclick = () => $('loginModal').classList.remove('hidden');
-    $('btnLogout').onclick = async () => { await window._fb.signOut(window._fb.auth); };
-
-    $('loginForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const email = $('email').value.trim();
-      const password = $('password').value;
-      $('loginBtn').disabled = true;
-      try {
-        await window._fb.signInWithEmailAndPassword(window._fb.auth, email, password);
-      } catch (err) {
-        if (err.code === 'auth/user-not-found') {
-          await window._fb.createUserWithEmailAndPassword(window._fb.auth, email, password);
-        } else {
-          alert(err.message);
+        .rank-label, .file-label {
+            font-weight: bold;
+            font-size: 14px;
+            color: #333;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
-      } finally {
-        $('loginBtn').disabled = false;
-      }
-    });
-
-    $('closeLogin').onclick = () => $('loginModal').classList.add('hidden');
-
-    onAuthStateChanged(auth, (user) => {
-      showAuth(!!user, user || {});
-      // gate main content
-      $('app').classList.toggle('hidden', !user);
-      if (!user) $('loginModal').classList.remove('hidden');
-    });
-
-    // ------------------ Firestore listeners ------------------
-    function startListeners() {
-      // Puzzles
-      const qP = window._fb.query(window._fb.collection(window._fb.db, 'puzzles'), window._fb.orderBy('createdAt', 'desc'));
-      window._fb.onSnapshot(qP, (snap) => {
-        const arr = [];
-        snap.forEach((docSnap) => {
-          const d = docSnap.data();
-          const createdAt = d.createdAt?.toDate ? d.createdAt.toDate() : new Date(d.createdAt || Date.now());
-
-          // Prefer new Python shape (fen/solutionSAN/sideToMove)
-          const fen = d.fen || '';
-          const board = fen ? fenToBoard(fen) : (Array.isArray(d.board) ? d.board : []);
-          const sideToMove = d.sideToMove || (d.firstMove === 'white' ? 'w' : 'b');
-          const solutionSAN = Array.isArray(d.solutionSAN) ? d.solutionSAN : (Array.isArray(d.solution) ? d.solution : []);
-
-          arr.push({
-            id: docSnap.id,
-            title: d.title || 'Untitled Puzzle',
-            description: d.description || '',
-            fen,
-            board,
-            sideToMove,
-            solutionSAN,
-            hasSolutions: solutionSAN.length > 0,
-            createdAt
-          });
-        });
-        puzzles = arr;
-        renderPuzzles();
-        toast(`Loaded ${puzzles.length} puzzles`);
-      });
-
-      // Results
-      const rCol = window._fb.collection(window._fb.db, 'results');
-      window._fb.onSnapshot(rCol, (snap) => {
-        const map = {};
-        snap.forEach((docSnap) => { map[docSnap.id] = docSnap.data().submissions || []; });
-        results = map;
-        renderResults();
-      });
-    }
-
-    // ------------------ Rendering ------------------
-    function renderPuzzles() {
-      const list = $('puzzlesList');
-      list.innerHTML = '';
-      puzzles.forEach((p) => {
-        const li = document.createElement('div');
-        li.className = 'p-4 rounded-lg border bg-white shadow-sm mb-3';
-        li.innerHTML = `
-          <div class="flex items-center justify-between">
-            <div>
-              <div class="text-lg font-semibold">${p.title}</div>
-              <div class="text-sm text-gray-500">${p.description || ''}</div>
-              <div class="text-xs text-gray-400 mt-1">Created ${p.createdAt.toLocaleString()}</div>
-            </div>
-            <button class="px-4 py-2 bg-blue-600 text-white rounded-md" data-id="${p.id}">Solve</button>
-          </div>
-          <div class="mt-3" id="board-${p.id}"></div>
-          <div class="mt-2 text-sm">${p.hasSolutions ? '<span class="text-green-700">Has solution</span>' : '<span class="text-gray-500">Open puzzle</span>'}</div>
-        `;
-        list.appendChild(li);
-
-        // draw preview board
-        const board = p.board && p.board.length ? p.board : (p.fen ? fenToBoard(p.fen) : []);
-        renderBoard(board, `board-${p.id}`);
-
-        li.querySelector('button').onclick = () => openSolve(p.id);
-      });
-    }
-
-    function renderResults() {
-      const list = $('resultsList');
-      list.innerHTML = '';
-      puzzles.forEach((p) => {
-        const arr = (results[p.id] || []).slice();
-        // sort: correct first by time, then incorrect
-        arr.sort((a, b) => {
-          if (a.isCorrect && !b.isCorrect) return -1;
-          if (!a.isCorrect && b.isCorrect) return 1;
-          if (a.isCorrect && b.isCorrect) return (a.timeSpent || 0) - (b.timeSpent || 0);
-          return 0;
-        });
-
-        const card = document.createElement('div');
-        card.className = 'p-4 rounded-lg border bg-white shadow-sm mb-3';
-        const correct = arr.filter(x => x.isCorrect !== false);
-        const wrong = arr.filter(x => x.isCorrect === false);
-
-        const correctHtml = correct.map((r, i) => `
-          <div class="border-l-4 ${i===0?'border-yellow-400 bg-yellow-50':i===1?'border-gray-400 bg-gray-50':i===2?'border-orange-400 bg-orange-50':'border-gray-300'} pl-3 py-2 mb-2">
-            <div class="flex justify-between">
-              <div class="font-medium">${r.playerName || 'Anonymous'} <span class="text-green-600 text-sm">✓</span></div>
-              <div class="text-xs text-gray-500">${new Date(r.submittedAt).toLocaleString()}</div>
-            </div>
-            <div class="text-xs text-gray-600">Time: ${formatTime(r.timeSpent||0)} • Moves: ${r.moveCount||0} • ${Array.isArray(r.moves)?r.moves.join(' '):''}</div>
-          </div>`).join('');
-
-        const wrongHtml = wrong.length ? `
-          <div class="mt-3">
-            <div class="font-medium mb-1">Other submissions</div>
-            ${wrong.map(r => `
-              <div class="border-l-4 border-red-400 bg-red-50 pl-3 py-2 mb-2">
-                <div class="flex justify-between">
-                  <div class="font-medium">${r.playerName || 'Anonymous'} <span class="text-red-600 text-sm">✗</span></div>
-                  <div class="text-xs text-gray-500">${new Date(r.submittedAt).toLocaleString()}</div>
-                </div>
-                <div class="text-xs text-gray-600">Time: ${formatTime(r.timeSpent||0)} • Moves: ${r.moveCount||0} • ${Array.isArray(r.moves)?r.moves.join(' '):''}</div>
-              </div>`).join('')}
-          </div>` : '';
-
-        card.innerHTML = `
-          <div class="flex items-center justify-between mb-2">
-            <div class="text-lg font-semibold">${p.title}</div>
-            <div class="text-sm text-gray-500">${arr.length} submission${arr.length!==1?'s':''}</div>
-          </div>
-          ${correct.length?`<div class="font-medium mb-1">Correct (ranked)</div>${correctHtml}`:'<div class="text-gray-500">No submissions yet.</div>'}
-          ${wrongHtml}
-        `;
-        list.appendChild(card);
-      });
-    }
-
-    // ------------------ Solve modal ------------------
-    let currentSolve = null;
-    let timerId = null; let elapsed = 0;
-
-    function formatTime(s) {
-      const m = Math.floor(s/60).toString().padStart(2,'0');
-      const sec = (s%60).toString().padStart(2,'0');
-      return `${m}:${sec}`;
-    }
-
-    function tick() {
-      elapsed += 1;
-      $('puzzleTimer').textContent = formatTime(elapsed);
-    }
-
-    function openSolve(id) {
-      const p = puzzles.find(x => x.id === id);
-      if (!p) return;
-      currentSolve = p;
-      elapsed = 0; clearInterval(timerId); timerId = setInterval(tick, 1000);
-
-      $('solveTitle').textContent = p.title;
-      $('solveDesc').textContent = p.description || '';
-      const board = p.board && p.board.length ? p.board : (p.fen ? fenToBoard(p.fen) : []);
-      renderBoard(board, 'solveBoard');
-      $('solutionPath').innerHTML = p.solutionSAN?.length ? renderSANList(p.solutionSAN) : '<span class="text-gray-500">No official solution</span>';
-      $('solveModal').classList.remove('hidden');
-    }
-
-    $('closeSolve').onclick = () => { $('solveModal').classList.add('hidden'); clearInterval(timerId); };
-
-    $('submitSolution').onclick = async () => {
-      const name = ($('playerName').value || 'Anonymous').trim();
-      const data = {
-        playerName: name,
-        moves: [],            // (optional: capture your UI move list here)
-        moveCount: 0,
-        isCorrect: false,     // you can set true if you validate against solutionSAN client-side
-        timeSpent: elapsed,
-        submittedAt: new Date().toISOString()
-      };
-
-      // Firestore write (merge/update result doc)
-      const ref = window._fb.doc(window._fb.db, 'results', currentSolve.id);
-      const snap = await window._fb.getDoc(ref);
-      const subs = snap.exists() ? (snap.data().submissions || []) : [];
-      subs.push(data);
-      // sort so the server data stays consistent
-      subs.sort((a,b)=>{
-        if (a.isCorrect && !b.isCorrect) return -1;
-        if (!a.isCorrect && b.isCorrect) return 1;
-        if (a.isCorrect && b.isCorrect) return (a.timeSpent||0)-(b.timeSpent||0);
-        return 0;
-      });
-      await window._fb.setDoc(ref, { puzzleId: currentSolve.id, submissions: subs, lastUpdated: new Date() }, { merge: true });
-      $('solveModal').classList.add('hidden');
-      clearInterval(timerId);
-    };
-
-    // ------------------ Startup ------------------
-    // Fix a previous error: bad Set merge syntax that caused console crashes in older file
-    // (replaced with a correct version; see earlier broken line in your file). :contentReference[oaicite:2]{index=2}
-
-    // Start listeners once the DOM is ready
-    window.addEventListener('DOMContentLoaded', () => {
-      startListeners();
-    });
-  </script>
-
-  <style>
-    .file-label{display:flex;align-items:center;justify-content:center;font-weight:600;color:#333}
-    .rank-label{display:flex;align-items:center;justify-content:center;font-weight:600;color:#333}
-  </style>
+        .rank-label {
+            width: 20px;
+            height: 60px;
+        }
+        .file-label {
+            width: 60px;
+            height: 20px;
+        }
+        .selected { box-shadow: inset 0 0 0 3px #ff6b6b; }
+        .possible-move { 
+            position: relative;
+        }
+        .possible-move::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 20px;
+            height: 20px;
+            background-color: rgba(0, 255, 0, 0.6);
+            border-radius: 50%;
+        }
+        .piece-bank {
+            display: flex;
+            gap: 10px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+        .piece-bank-item {
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            cursor: pointer;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            background-color: white;
+        }
+        .piece-bank-item:hover {
+            border-color: #007bff;
+        }
+        .king-in-check {
+            box-shadow: inset 0 0 0 3px #ff0000 !important;
+            animation: pulse-red 1s infinite;
+        }
+        @keyframes pulse-red {
+            0% { box-shadow: inset 0 0 0 3px #ff0000; }
+            50% { box-shadow: inset 0 0 0 5px #ff0000; }
+            100% { box-shadow: inset 0 0 0 3px #ff0000; }
+        }
+    </style>
 </head>
-<body class="bg-slate-50">
-  <!-- NAV -->
-  <header class="bg-white border-b sticky top-0 z-10">
-    <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-      <div class="text-xl font-bold">Chess Puzzles Hub</div>
-      <div class="flex items-center gap-3">
-        <span id="navUser" class="text-sm text-gray-600">Guest</span>
-        <button id="btnLogin" class="px-3 py-1.5 bg-blue-600 text-white rounded-md">Log in</button>
-        <button id="btnLogout" class="px-3 py-1.5 bg-gray-100 rounded-md hidden">Log out</button>
-      </div>
-    </div>
-  </header>
-
-  <!-- APP -->
-  <main id="app" class="max-w-5xl mx-auto px-4 py-6 hidden">
-    <div class="grid md:grid-cols-2 gap-6">
-      <section>
-        <h2 class="text-lg font-semibold mb-2">Puzzles</h2>
-        <div id="puzzlesList"></div>
-      </section>
-      <section>
-        <h2 class="text-lg font-semibold mb-2">Results</h2>
-        <div id="resultsList"></div>
-      </section>
-    </div>
-  </main>
-
-  <!-- LOGIN MODAL -->
-  <div id="loginModal" class="fixed inset-0 bg-black/40 items-center justify-center hidden">
-    <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md mx-3">
-      <div class="flex items-center justify-between mb-4">
-        <h3 class="text-lg font-semibold">Sign in / Register</h3>
-        <button id="closeLogin" class="p-1.5 rounded hover:bg-gray-100">✕</button>
-      </div>
-      <form id="loginForm" class="space-y-3">
-        <div>
-          <label class="block text-sm text-gray-600 mb-1">Email</label>
-          <input id="email" type="email" required class="w-full border rounded-md px-3 py-2">
+<body class="bg-gradient-to-br from-blue-50 to-indigo-100 min-h-screen">
+    <div id="loadingOverlay" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white p-8 rounded-lg shadow-xl text-center">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <h3 class="text-lg font-semibold text-gray-800">Loading Chess Puzzles Hub...</h3>
+            <p class="text-gray-600 mt-2">Connecting to cloud database</p>
         </div>
-        <div>
-          <label class="block text-sm text-gray-600 mb-1">Password</label>
-          <input id="password" type="password" required class="w-full border rounded-md px-3 py-2">
-        </div>
-        <button id="loginBtn" class="w-full bg-blue-600 text-white rounded-md py-2">Continue</button>
-        <p class="text-xs text-gray-500">If the email doesn’t exist, we’ll create the account automatically.</p>
-      </form>
     </div>
-  </div>
+    <div id="loginModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white p-8 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Welcome to Chess Puzzles Hub</h2>
+            <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2">Enter Your Name:</label>
+                <input type="text" id="userName" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500" placeholder="Your unique name for today">
+            </div>
+            <div id="nameError" class="text-red-500 text-sm mb-4 hidden">This name has already been used today. Please choose another name.</div>
+            <button onclick="enterSite()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Enter Site</button>
+        </div>
+    </div>
 
-  <!-- SOLVE MODAL -->
-  <div id="solveModal" class="fixed inset-0 bg-black/40 items-center justify-center hidden">
-    <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-3xl mx-3">
-      <div class="flex items-center justify-between mb-2">
-        <div>
-          <div id="solveTitle" class="text-lg font-semibold"></div>
-          <div id="solveDesc" class="text-sm text-gray-600"></div>
+    <nav class="bg-white shadow-lg">
+        <div class="max-w-7xl mx-auto px-4">
+            <div class="flex justify-between items-center py-4">
+                <h1 class="text-2xl font-bold text-gray-800">Chess Puzzles Hub</h1>
+                <div class="flex space-x-4">
+                    <button onclick="showSection('create')" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition duration-200">Create Puzzle</button>
+                    <button onclick="showSection('puzzles')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition duration-200">View Puzzles</button>
+                    <button onclick="showSection('results')" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition duration-200">Results</button>
+                </div>
+                <div class="text-gray-600">Welcome, <span id="currentUser" class="font-semibold"></span></div>
+            </div>
         </div>
-        <div class="text-sm text-gray-500">Time: <span id="puzzleTimer">00:00</span></div>
-      </div>
-      <div id="solveBoard" class="mb-4"></div>
-      <div class="mb-2">
-        <div class="font-medium">Official Solution</div>
-        <div id="solutionPath" class="text-sm bg-gray-50 rounded p-2"></div>
-      </div>
-      <div class="flex items-center gap-2">
-        <input id="playerName" placeholder="Your name (optional)" class="border rounded px-3 py-2 flex-1">
-        <div class="flex-1"></div>
-      </div>
-      <div class="flex items-center justify-end gap-2 mt-4">
-        <button id="closeSolve" class="px-3 py-2 rounded-md bg-gray-100">Cancel</button>
-        <button id="submitSolution" class="px-4 py-2 rounded-md bg-green-600 text-white">Submit</button>
-      </div>
+    </nav>
+
+    <div id="createSection" class="max-w-6xl mx-auto p-6 hidden">
+        <h2 class="text-3xl font-bold text-gray-800 mb-6">Create New Puzzle</h2>
+        <div class="bg-white rounded-lg shadow-lg p-6">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div>
+                    <div class="mb-4">
+                        <label class="block text-gray-700 text-sm font-bold mb-2">Puzzle Title:</label>
+                        <input type="text" id="puzzleTitle" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500" placeholder="Enter puzzle title">
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-gray-700 text-sm font-bold mb-2">Description:</label>
+                        <textarea id="puzzleDescription" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 h-24" placeholder="Describe the puzzle objective"></textarea>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-gray-700 text-sm font-bold mb-2">First Move:</label>
+                        <select id="firstMove" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500">
+                            <option value="white">White to move</option>
+                            <option value="black">Black to move</option>
+                        </select>
+                    </div>
+                    <div class="flex space-x-4">
+                        <button onclick="saveWithSolution()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-lg transition duration-200">Save with Solution</button>
+                        <button onclick="saveWithoutSolution()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg transition duration-200">Save without Solution</button>
+                        <button onclick="clearBoard()" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded-lg transition duration-200">Clear Board</button>
+                    </div>
+                </div>
+                <div>
+                    <h3 class="text-lg font-semibold mb-4">Setup Chess Board</h3>
+                    
+                    <div class="mb-4">
+                        <h4 class="text-sm font-semibold mb-2">Black Pieces:</h4>
+                        <div class="piece-bank">
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♛')">♛</div>
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♜')">♜</div>
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♝')">♝</div>
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♞')">♞</div>
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♟')">♟</div>
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♚')">♚</div>
+                        </div>
+                    </div>
+
+                    <div class="chess-board-container mb-4">
+                        <div id="createBoard"></div>
+                    </div>
+
+                    <div class="mb-4">
+                        <h4 class="text-sm font-semibold mb-2">White Pieces:</h4>
+                        <div class="piece-bank">
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♕')">♕</div>
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♖')">♖</div>
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♗')">♗</div>
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♘')">♘</div>
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♙')">♙</div>
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('♔')">♔</div>
+                            <div class="piece-bank-item" onclick="selectPieceFromBank('❌')" style="color: red;">❌</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
-  </div>
+
+    <div id="puzzlesSection" class="max-w-6xl mx-auto p-6">
+        <h2 class="text-3xl font-bold text-gray-800 mb-6">Available Puzzles</h2>
+        <div id="puzzlesList" class="space-y-6"></div>
+    </div>
+
+    <div id="resultsSection" class="max-w-6xl mx-auto p-6 hidden">
+        <h2 class="text-3xl font-bold text-gray-800 mb-6">Puzzle Results</h2>
+        <div id="resultsList" class="space-y-6"></div>
+    </div>
+
+    <div id="solveModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white p-6 rounded-lg shadow-xl max-w-5xl w-full mx-4 max-h-[95vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-6">
+                <h3 id="solvePuzzleTitle" class="text-2xl font-bold text-gray-800"></h3>
+                <div class="flex items-center space-x-4">
+                    <div class="bg-blue-100 px-4 py-2 rounded-lg">
+                        <span class="text-sm font-semibold text-blue-800">Time: </span>
+                        <span id="puzzleTimer" class="text-lg font-bold text-blue-900">00:00</span>
+                    </div>
+                    <button onclick="closeSolveModal()" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+                </div>
+            </div>
+            
+            <div class="flex flex-col items-center">
+                <div id="solveBoard" class="inline-block border-2 border-gray-800 mb-6"></div>
+                
+                <div class="w-full max-w-2xl mb-6">
+                    <h4 class="text-lg font-semibold mb-3 text-center">Puzzle Description</h4>
+                    <div id="solvePuzzleDescription" class="bg-gray-50 p-4 rounded-lg text-center"></div>
+                </div>
+                
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 w-full max-w-4xl">
+                    <div>
+                        <h4 class="text-lg font-semibold mb-2">Move Notations</h4>
+                        <div id="notationsBox" class="bg-gray-100 p-4 rounded-lg h-32 overflow-y-auto text-sm font-mono mb-4"></div>
+                        <div class="flex space-x-4 justify-center">
+                            <button onclick="submitSolution()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Submit Solution</button>
+                            <button onclick="resetPuzzle()" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Reset</button>
+                        </div>
+                    </div>
+                    <div>
+                        <h4 class="text-lg font-semibold mb-2">Chess Notation Guide</h4>
+                        <div class="text-sm text-gray-600 bg-blue-50 p-4 rounded-lg">
+                            <ul class="space-y-1">
+                                <li>• <strong>K</strong>=King, <strong>Q</strong>=Queen, <strong>R</strong>=Rook, <strong>B</strong>=Bishop, <strong>N</strong>=Knight</li>
+                                <li>• <strong>+</strong> = Check, <strong>#</strong> = Checkmate</li>
+                                <li>• <strong>O-O</strong> = Kingside castling, <strong>O-O-O</strong> = Queenside castling</li>
+                                <li>• <strong>x</strong> = Capture, <strong>=</strong> = Promotion</li>
+                                <li>• <strong>e.p.</strong> = En passant capture</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="successModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white p-8 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div class="text-center">
+                <div class="text-green-500 text-6xl mb-4">✓</div>
+                <h3 class="text-2xl font-bold text-gray-800 mb-4">Success!</h3>
+                <p class="text-gray-600 mb-6">Your result has been submitted successfully!</p>
+                <button onclick="closeSuccessModal()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg transition duration-200">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="solutionCountModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white p-8 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Number of Solutions</h2>
+            <div class="mb-6">
+                <label class="block text-gray-700 text-sm font-bold mb-2">How many solutions do you want to provide?</label>
+                <select id="solutionCount" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500">
+                    <option value="1">1 Solution</option>
+                    <option value="2">2 Solutions</option>
+                </select>
+            </div>
+            <div class="flex space-x-4">
+                <button onclick="startSolutionCapture()" class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Continue</button>
+                <button onclick="closeSolutionCountModal()" class="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="solutionCaptureModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white p-6 rounded-lg shadow-xl max-w-5xl w-full mx-4 max-h-[95vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-6">
+                <h3 id="solutionCaptureTitle" class="text-2xl font-bold text-gray-800">Provide Solution</h3>
+                <button onclick="closeSolutionCaptureModal()" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+            </div>
+            
+            <div class="flex flex-col items-center">
+                <div id="solutionBoard" class="inline-block border-2 border-gray-800 mb-6"></div>
+                
+                <div class="w-full max-w-2xl mb-6">
+                    <h4 class="text-lg font-semibold mb-3 text-center">Solution Moves</h4>
+                    <div id="solutionNotationsBox" class="bg-gray-100 p-4 rounded-lg h-32 overflow-y-auto text-sm font-mono mb-4"></div>
+                    <div class="flex space-x-4 justify-center">
+                        <button onclick="saveSolutionMoves()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Save Solution</button>
+                        <button onclick="resetSolutionBoard()" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Reset</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+
+    <div id="passwordModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white p-8 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Admin Access Required</h2>
+            <div class="mb-4">
+                <label class="block text-gray-700 text-sm font-bold mb-2">Enter Password:</label>
+                <div class="relative">
+                    <input type="password" id="adminPassword" class="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500" placeholder="Enter admin password">
+                    <button type="button" onclick="togglePasswordVisibility()" class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600">
+                        <svg id="eyeIcon" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                        <svg id="eyeOffIcon" class="h-5 w-5 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div id="passwordError" class="text-red-500 text-sm mb-4 hidden">Incorrect password. Please try again.</div>
+            <div class="flex space-x-4">
+                <button onclick="verifyPassword()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Access</button>
+                <button onclick="closePasswordModal()" class="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let currentUserName = '';
+        let usedNamesToday = JSON.parse(localStorage.getItem('usedNamesToday') || '{}');
+        let puzzles = []; // Will be loaded from Firestore
+        let results = {}; // Will be loaded from Firestore
+        let isFirebaseReady = false;
+        let selectedPiece = null;
+        let selectedSquare = null;
+        let currentTurn = 'white';
+        // FIX: gameBoard is now explicitly defined as a 2D array, which will be populated.
+        let gameBoard = [];
+        let moveHistory = [];
+        let currentPuzzleId = null;
+        let selectedBankPiece = null;
+        let castlingRights = { whiteKing: true, whiteQueenside: true, blackKing: true, blackQueenside: true };
+        let enPassantTarget = null;
+        let isCreateAuthorized = false;
+        let isResultsAuthorized = false;
+        let gameEnded = false;
+        const adminPassword = 'chessclub@rkv';
+
+        // FIX: Function to convert 2D board array to 1D string for Firebase
+        function serializeBoard(board) {
+            return board.flat().join('');
+        }
+
+        // FIX: Function to convert 1D string from Firebase back to 2D board array
+        function deserializeBoard(boardString) {
+            const board = [];
+            for (let i = 0; i < 8; i++) {
+                const row = [];
+                for (let j = 0; j < 8; j++) {
+                    const piece = boardString[i * 8 + j];
+                    row.push(piece === ' ' ? '' : piece);
+                }
+                board.push(row);
+            }
+            return board;
+        }
+
+        // Firebase helper functions - These are now primarily for writing data. Reading is handled by real-time listeners.
+        
+        // FIX: The savePuzzleToFirestore function is now more streamlined.
+        // The real-time listener will handle updating the local 'puzzles' array.
+        async function savePuzzleToFirestore(puzzleData) {
+            try {
+                // FIX: Convert nested board array to a single string before saving
+                const serializedPuzzleData = {
+                    ...puzzleData,
+                    board: serializeBoard(puzzleData.board),
+                    createdAt: new Date() // Using native Date object which Firestore converts to its timestamp
+                };
+                
+                const puzzlesCollection = window.firestore.collection(window.db, 'puzzles');
+                // Add a proper server timestamp for reliable sorting
+                const docRef = await window.firestore.addDoc(puzzlesCollection, serializedPuzzleData);
+                console.log('Puzzle saved to Firestore with ID:', docRef.id);
+                return { id: docRef.id, ...puzzleData };
+            } catch (error) {
+                console.error('Error saving puzzle to Firestore:', error);
+                alert('Could not save puzzle to the cloud. Check console for errors. It might be a security rule issue.');
+                // Fallback to localStorage as a backup
+                const localPuzzle = { id: Date.now().toString(), ...puzzleData, createdAt: new Date().toISOString() };
+                const localPuzzles = JSON.parse(localStorage.getItem('chessPuzzles') || '[]');
+                localPuzzles.unshift(localPuzzle);
+                localStorage.setItem('chessPuzzles', JSON.stringify(localPuzzles));
+                // Manually update the global array and display if Firestore fails
+                puzzles.unshift(localPuzzle);
+                displayPuzzles();
+                throw error; // re-throw error to be caught by the caller
+            }
+        }
+        
+        // FIX: The saveResultToFirestore function is updated for better sorting and reliability.
+        // The real-time listener will handle updating the local 'results' object.
+        async function saveResultToFirestore(puzzleId, resultData) {
+            try {
+                const resultDocRef = window.firestore.doc(window.db, 'results', puzzleId);
+                const docSnap = await window.firestore.getDoc(resultDocRef);
+
+                let currentSubmissions = [];
+                if (docSnap.exists()) {
+                    currentSubmissions = docSnap.data().submissions || [];
+                }
+
+                currentSubmissions.push(resultData);
+
+                // Sort results: correct solutions by time first, then incorrect solutions
+                currentSubmissions.sort((a, b) => {
+                    if (a.isCorrect && !b.isCorrect) return -1;
+                    if (!a.isCorrect && b.isCorrect) return 1;
+                    if (a.isCorrect && b.isCorrect) return a.timeSpent - b.timeSpent;
+                    return 0; // Keep original order for incorrect solutions
+                });
+
+                await window.firestore.setDoc(resultDocRef, {
+                    puzzleId: puzzleId,
+                    submissions: currentSubmissions,
+                    lastUpdated: new Date()
+                }, { merge: true }); // Use merge to avoid overwriting other fields if they exist
+
+                console.log('Result saved to Firestore for puzzle:', puzzleId);
+            } catch (error) {
+                console.error('Error saving result to Firestore:', error);
+                alert('Could not save result to the cloud. Check console for errors. It might be a security rule issue.');
+                throw error; // re-throw error
+            }
+        }
+        
+        // FIX: The saveUserNamesToFirestore function now correctly uses `setDoc` to create or overwrite today's document.
+        async function saveUserNamesToFirestore() {
+            try {
+                const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD for a consistent ID
+                const userNamesDocRef = window.firestore.doc(window.db, 'userNames', today);
+                
+                await window.firestore.setDoc(userNamesDocRef, {
+                    names: usedNamesToday[new Date().toDateString()] || []
+                });
+                
+                console.log('User names saved to Firestore for date:', today);
+            } catch (error) {
+                console.error('Error saving user names to Firestore:', error);
+            }
+        }
+
+        // FIX: The loadUserNamesFromFirestore function is now more efficient, fetching only today's document.
+        async function loadUserNamesFromFirestore() {
+            try {
+                const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
+                const todayString = new Date().toDateString();
+                const userNamesDocRef = window.firestore.doc(window.db, 'userNames', today);
+                const docSnap = await window.firestore.getDoc(userNamesDocRef);
+                
+                if (docSnap.exists()) {
+                    const cloudNames = docSnap.data().names || [];
+                    const localNames = usedNamesToday[todayString] || [];
+                    // Merge cloud and local names, removing duplicates
+                    usedNamesToday[todayString] = [...new Set([...localNames, ...cloudNames])];
+                }
+                
+                console.log('User names loaded from Firestore');
+                return usedNamesToday;
+            } catch (error) {
+                console.error('Error loading user names from Firestore:', error);
+                return usedNamesToday;
+            }
+        }
+
+
+        // Initialize Firebase and load data
+        window.initializeChessApp = async function() {
+            try {
+                console.log('Initializing Chess Puzzles Hub with Firebase...');
+                
+                // Load initial user names
+                await loadUserNamesFromFirestore();
+                
+                // Set up real-time listener for puzzles
+                const puzzlesCollection = window.firestore.collection(window.db, 'puzzles');
+                const puzzlesQuery = window.firestore.query(puzzlesCollection, window.firestore.orderBy('createdAt', 'desc'));
+                
+                window.firestore.onSnapshot(puzzlesQuery, (snapshot) => {
+                    const newPuzzles = [];
+                    snapshot.forEach((doc) => {
+                        // FIX: Deserialize board string back to 2D array
+                        const data = doc.data();
+                        const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.createdAt);
+                        const board = deserializeBoard(data.board);
+                        newPuzzles.push({ id: doc.id, ...data, board, createdAt });
+                    });
+                    
+                    puzzles = newPuzzles;
+                    localStorage.setItem('chessPuzzles', JSON.stringify(puzzles));
+                    
+                    // Refresh display if on puzzles section
+                    if (!document.getElementById('puzzlesSection').classList.contains('hidden')) {
+                        displayPuzzles();
+                    }
+                    if (!document.getElementById('resultsSection').classList.contains('hidden')) {
+                        displayResults();
+                    }
+                    console.log(`Real-time update: ${puzzles.length} puzzles loaded.`);
+                });
+                
+                // Set up real-time listener for results
+                const resultsCollection = window.firestore.collection(window.db, 'results');
+                window.firestore.onSnapshot(resultsCollection, (snapshot) => {
+                    const newResults = {};
+                    snapshot.forEach((doc) => {
+                        newResults[doc.id] = doc.data().submissions || [];
+                    });
+                    
+                    results = newResults;
+                    localStorage.setItem('chessResults', JSON.stringify(results));
+                    
+                    // Refresh display if on results section
+                    if (!document.getElementById('resultsSection').classList.contains('hidden')) {
+                        displayResults();
+                    }
+                    console.log(`Real-time update: Results for ${Object.keys(results).length} puzzles loaded.`);
+                });
+                
+                isFirebaseReady = true;
+                document.getElementById('loadingOverlay').classList.add('hidden');
+                document.getElementById('loginModal').classList.remove('hidden');
+                console.log('Chess Puzzles Hub initialized successfully with real-time updates!');
+                
+            } catch (error) {
+                console.error('Error initializing Chess Puzzles Hub:', error);
+                document.getElementById('loadingOverlay').classList.add('hidden');
+                alert('Failed to connect to cloud database. The app will work with local storage only.');
+                
+                puzzles = JSON.parse(localStorage.getItem('chessPuzzles') || '[]');
+                results = JSON.parse(localStorage.getItem('chessResults') || '{}');
+                isFirebaseReady = false;
+                document.getElementById('loginModal').classList.remove('hidden');
+            }
+        };
+
+        // FIX: This function is simplified. It now just calls displayResults,
+        // relying on the data from the real-time listener.
+        function loadAndDisplayResults() {
+            displayResults();
+        }
+        
+        let puzzleStartTime = null;
+        let timerInterval = null;
+        let currentPuzzleSolutions = [];
+        let solutionCaptureData = {
+            solutionsNeeded: 0,
+            currentSolution: 0,
+            capturedSolutions: [],
+            puzzleData: null
+        };
+
+        // Chess piece mappings with better visibility
+        const pieceSymbols = {
+            'K': '<span style="color: #ffffff; text-shadow: 2px 2px 4px #000000, -1px -1px 2px #000000;">♔</span>', 
+            'Q': '<span style="color: #ffffff; text-shadow: 2px 2px 4px #000000, -1px -1px 2px #000000;">♕</span>', 
+            'R': '<span style="color: #ffffff; text-shadow: 2px 2px 4px #000000, -1px -1px 2px #000000;">♖</span>', 
+            'B': '<span style="color: #ffffff; text-shadow: 2px 2px 4px #000000, -1px -1px 2px #000000;">♗</span>', 
+            'N': '<span style="color: #ffffff; text-shadow: 2px 2px 4px #000000, -1px -1px 2px #000000;">♘</span>', 
+            'P': '<span style="color: #ffffff; text-shadow: 2px 2px 4px #000000, -1px -1px 2px #000000;">♙</span>',
+            'k': '<span style="color: #000000; text-shadow: 1px 1px 2px #ffffff, -1px -1px 1px #ffffff;">♚</span>', 
+            'q': '<span style="color: #000000; text-shadow: 1px 1px 2px #ffffff, -1px -1px 1px #ffffff;">♛</span>', 
+            'r': '<span style="color: #000000; text-shadow: 1px 1px 2px #ffffff, -1px -1px 1px #ffffff;">♜</span>', 
+            'b': '<span style="color: #000000; text-shadow: 1px 1px 2px #ffffff, -1px -1px 1px #ffffff;">♝</span>', 
+            'n': '<span style="color: #000000; text-shadow: 1px 1px 2px #ffffff, -1px -1px 1px #ffffff;">♞</span>', 
+            'p': '<span style="color: #000000; text-shadow: 1px 1px 2px #ffffff, -1px -1px 1px #ffffff;">♟</span>'
+        };
+
+        const initialBoard = [
+            ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'],
+            ['p', 'p', 'p', 'p', 'p', 'p', 'p', 'p'],
+            ['', '', '', '', '', '', '', ''],
+            ['', '', '', '', '', '', '', ''],
+            ['', '', '', '', '', '', '', ''],
+            ['', '', '', '', '', '', '', ''],
+            ['P', 'P', 'P', 'P', 'P', 'P', 'P', 'P'],
+            ['R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R']
+        ];
+
+        // Check if name was used today
+        function isNameUsedToday(name) {
+            const today = new Date().toDateString();
+            return usedNamesToday[today] && usedNamesToday[today].includes(name);
+        }
+
+        // Add name to today's used names
+        async function addNameToToday(name) {
+            const today = new Date().toDateString();
+            if (!usedNamesToday[today]) {
+                usedNamesToday[today] = [];
+            }
+            usedNamesToday[today].push(name);
+            
+            // Save to both localStorage and Firestore
+            localStorage.setItem('usedNamesToday', JSON.stringify(usedNamesToday));
+            if (isFirebaseReady) {
+                await saveUserNamesToFirestore();
+            }
+        }
+
+        // Enter site function
+        async function enterSite() {
+            const name = document.getElementById('userName').value.trim();
+            if (!name) {
+                alert('Please enter your name');
+                return;
+            }
+            
+            if (isNameUsedToday(name)) {
+                document.getElementById('nameError').classList.remove('hidden');
+                return;
+            }
+
+            currentUserName = name;
+            await addNameToToday(name);
+            document.getElementById('currentUser').textContent = name;
+            document.getElementById('loginModal').classList.add('hidden');
+            document.getElementById('nameError').classList.add('hidden');
+            showSection('puzzles');
+        }
+
+        // Show section function
+        function showSection(section) {
+            // Check if admin access is required for create section
+            if (section === 'create' && !isCreateAuthorized) {
+                document.getElementById('passwordModal').setAttribute('data-target-section', 'create');
+                document.getElementById('passwordModal').classList.remove('hidden');
+                return;
+            }
+            
+            // Check if admin access is required for results section
+            if (section === 'results' && !isResultsAuthorized) {
+                document.getElementById('passwordModal').setAttribute('data-target-section', 'results');
+                document.getElementById('passwordModal').classList.remove('hidden');
+                return;
+            }
+
+            document.getElementById('createSection').classList.add('hidden');
+            document.getElementById('puzzlesSection').classList.add('hidden');
+            document.getElementById('resultsSection').classList.add('hidden');
+            
+            document.getElementById(section + 'Section').classList.remove('hidden');
+            
+            if (section === 'create') {
+                gameBoard = JSON.parse(JSON.stringify(initialBoard));
+                initializeCreateBoard();
+            } else if (section === 'puzzles') {
+                displayPuzzles();
+            } else if (section === 'results') {
+                // Only load results when accessing results section
+                loadAndDisplayResults();
+            }
+        }
+
+        // Initialize create board
+        function initializeCreateBoard() {
+            const boardContainer = document.getElementById('createBoard');
+            boardContainer.innerHTML = '';
+            
+            // Create wrapper div for board and labels
+            const wrapper = document.createElement('div');
+            wrapper.style.display = 'inline-block';
+            wrapper.style.position = 'relative';
+            
+            // Create file labels at top
+            const topLabels = document.createElement('div');
+            topLabels.style.display = 'flex';
+            topLabels.style.marginLeft = '20px';
+            topLabels.style.marginBottom = '2px';
+            for (let col = 0; col < 8; col++) {
+                const label = document.createElement('div');
+                label.className = 'file-label';
+                label.textContent = String.fromCharCode(97 + col);
+                topLabels.appendChild(label);
+            }
+            wrapper.appendChild(topLabels);
+            
+            // Create main board container
+            const boardDiv = document.createElement('div');
+            boardDiv.style.display = 'flex';
+            
+            // Create left rank labels
+            const leftLabels = document.createElement('div');
+            leftLabels.style.display = 'flex';
+            leftLabels.style.flexDirection = 'column';
+            leftLabels.style.marginRight = '2px';
+            for (let row = 0; row < 8; row++) {
+                const label = document.createElement('div');
+                label.className = 'rank-label';
+                label.textContent = (8 - row).toString();
+                leftLabels.appendChild(label);
+            }
+            boardDiv.appendChild(leftLabels);
+            
+            // Create the actual chess board
+            const board = document.createElement('div');
+            board.style.display = 'grid';
+            board.style.gridTemplateColumns = 'repeat(8, 60px)';
+            board.style.gridTemplateRows = 'repeat(8, 60px)';
+            board.style.border = '2px solid #333';
+            
+            for (let row = 0; row < 8; row++) {
+                for (let col = 0; col < 8; col++) {
+                    const square = document.createElement('div');
+                    square.className = `chess-square ${(row + col) % 2 === 0 ? 'light-square' : 'dark-square'}`;
+                    square.onclick = () => handleCreateSquareClick(row, col);
+                    square.innerHTML = pieceSymbols[gameBoard[row][col]] || '';
+                    square.id = `create-square-${row}-${col}`;
+                    board.appendChild(square);
+                }
+            }
+            boardDiv.appendChild(board);
+            wrapper.appendChild(boardDiv);
+            
+            // Create file labels at bottom
+            const bottomLabels = document.createElement('div');
+            bottomLabels.style.display = 'flex';
+            bottomLabels.style.marginLeft = '20px';
+            bottomLabels.style.marginTop = '2px';
+            for (let col = 0; col < 8; col++) {
+                const label = document.createElement('div');
+                label.className = 'file-label';
+                label.textContent = String.fromCharCode(97 + col);
+                bottomLabels.appendChild(label);
+            }
+            wrapper.appendChild(bottomLabels);
+            
+            boardContainer.appendChild(wrapper);
+        }
+
+        // Handle create square click
+        function handleCreateSquareClick(row, col) {
+            if (selectedBankPiece) {
+                if (selectedBankPiece === '❌') {
+                    gameBoard[row][col] = '';
+                } else {
+                    // Convert symbol back to letter
+                    const pieceMap = {
+                        '♔': 'K', '♕': 'Q', '♖': 'R', '♗': 'B', '♘': 'N', '♙': 'P',
+                        '♚': 'k', '♛': 'q', '♜': 'r', '♝': 'b', '♞': 'n', '♟': 'p'
+                    };
+                    gameBoard[row][col] = pieceMap[selectedBankPiece] || '';
+                }
+                
+                // Update the specific square
+                const square = document.getElementById(`create-square-${row}-${col}`);
+                if (square) {
+                    square.innerHTML = pieceSymbols[gameBoard[row][col]] || '';
+                }
+                
+                // Clear selection visual feedback
+                document.querySelectorAll('.piece-bank-item').forEach(item => {
+                    item.style.backgroundColor = 'white';
+                    item.style.borderColor = '#ddd';
+                });
+                
+                selectedBankPiece = null;
+            }
+        }
+
+        // Select piece from bank
+        function selectPieceFromBank(piece) {
+            selectedBankPiece = piece;
+            
+            // Clear previous selection
+            document.querySelectorAll('.piece-bank-item').forEach(item => {
+                item.style.backgroundColor = 'white';
+                item.style.borderColor = '#ddd';
+            });
+            
+            // Highlight selected piece
+            event.target.style.backgroundColor = '#e3f2fd';
+            event.target.style.borderColor = '#2196f3';
+        }
+
+        // Clear board function
+        function clearBoard() {
+            // Create empty board
+            gameBoard = Array(8).fill().map(() => Array(8).fill(''));
+            
+            // Update all squares to be empty
+            for (let row = 0; row < 8; row++) {
+                for (let col = 0; col < 8; col++) {
+                    const square = document.getElementById(`create-square-${row}-${col}`);
+                    if (square) {
+                        square.innerHTML = '';
+                    }
+                }
+            }
+            
+            // Clear any selected piece from bank
+            selectedBankPiece = null;
+            document.querySelectorAll('.piece-bank-item').forEach(item => {
+                item.style.backgroundColor = 'white';
+                item.style.borderColor = '#ddd';
+            });
+        }
+
+        // Validate kings on board
+        function validateKings() {
+            let whiteKingCount = 0;
+            let blackKingCount = 0;
+            
+            for (let row = 0; row < 8; row++) {
+                for (let col = 0; col < 8; col++) {
+                    const piece = gameBoard[row][col];
+                    if (piece === 'K') whiteKingCount++;
+                    if (piece === 'k') blackKingCount++;
+                }
+            }
+            
+            const errors = [];
+            if (whiteKingCount === 0) errors.push('White King is missing');
+            if (whiteKingCount > 1) errors.push('Multiple White Kings found (only one allowed)');
+            if (blackKingCount === 0) errors.push('Black King is missing');
+            if (blackKingCount > 1) errors.push('Multiple Black Kings found (only one allowed)');
+            
+            return errors;
+        }
+
+        // Save with solution
+        function saveWithSolution() {
+            const title = document.getElementById('puzzleTitle').value.trim();
+            const description = document.getElementById('puzzleDescription').value.trim();
+            const firstMove = document.getElementById('firstMove').value;
+            
+            if (!title) {
+                alert('Please enter a puzzle title before saving.');
+                return;
+            }
+
+            if (!description) {
+                alert('Please enter a puzzle description before saving.');
+                return;
+            }
+
+            const kingErrors = validateKings();
+            if (kingErrors.length > 0) {
+                alert('Board validation failed:\n\n' + kingErrors.join('\n') + '\n\nPlease fix these issues before saving the puzzle.');
+                return;
+            }
+
+            solutionCaptureData.puzzleData = {
+                title: title,
+                description: description,
+                board: JSON.parse(JSON.stringify(gameBoard)),
+                firstMove: firstMove,
+                createdBy: currentUserName,
+                hasSolutions: true
+            };
+
+            document.getElementById('solutionCountModal').classList.remove('hidden');
+        }
+
+        // Save without solution
+        async function saveWithoutSolution() {
+            const title = document.getElementById('puzzleTitle').value.trim();
+            const description = document.getElementById('puzzleDescription').value.trim();
+            const firstMove = document.getElementById('firstMove').value;
+            
+            if (!title) {
+                alert('Please enter a puzzle title before saving.');
+                return;
+            }
+
+            if (!description) {
+                alert('Please enter a puzzle description before saving.');
+                return;
+            }
+
+            const kingErrors = validateKings();
+            if (kingErrors.length > 0) {
+                alert('Board validation failed:\n\n' + kingErrors.join('\n') + '\n\nPlease fix these issues before saving the puzzle.');
+                return;
+            }
+
+            const puzzleData = {
+                title: title,
+                description: description,
+                board: JSON.parse(JSON.stringify(gameBoard)),
+                firstMove: firstMove,
+                createdBy: currentUserName,
+                hasSolutions: false,
+                solutions: []
+            };
+
+            // Show loading state
+            const saveButton = event.target;
+            const originalText = saveButton.textContent;
+            saveButton.textContent = 'Saving...';
+            saveButton.disabled = true;
+
+            try {
+                await savePuzzleToFirestore(puzzleData);
+                
+                document.getElementById('puzzleTitle').value = '';
+                document.getElementById('puzzleDescription').value = '';
+                document.getElementById('firstMove').value = 'white';
+                
+                alert('Puzzle saved successfully and is now available globally!');
+                
+                showSection('puzzles');
+            } catch (error) {
+                // Error is already alerted in the save function
+            } finally {
+                saveButton.textContent = originalText;
+                saveButton.disabled = false;
+            }
+        }
+
+        // Close solution count modal
+        function closeSolutionCountModal() {
+            document.getElementById('solutionCountModal').classList.add('hidden');
+        }
+
+        // Start solution capture
+        function startSolutionCapture() {
+            const count = parseInt(document.getElementById('solutionCount').value);
+            solutionCaptureData.solutionsNeeded = count;
+            solutionCaptureData.currentSolution = 1;
+            solutionCaptureData.capturedSolutions = [];
+            
+            document.getElementById('solutionCountModal').classList.add('hidden');
+            openSolutionCaptureModal();
+        }
+
+        // Open solution capture modal
+        function openSolutionCaptureModal() {
+            gameBoard = JSON.parse(JSON.stringify(solutionCaptureData.puzzleData.board));
+            moveHistory = [];
+            currentTurn = solutionCaptureData.puzzleData.firstMove || 'white';
+            gameEnded = false;
+            
+            document.getElementById('solutionCaptureTitle').textContent = 
+                `Provide Solution ${solutionCaptureData.currentSolution} of ${solutionCaptureData.solutionsNeeded}`;
+            document.getElementById('solutionNotationsBox').innerHTML = '';
+            
+            initializeSolutionBoard();
+            document.getElementById('solutionCaptureModal').classList.remove('hidden');
+        }
+
+        // Initialize solution board
+        function initializeSolutionBoard() {
+            const boardContainer = document.getElementById('solutionBoard');
+            boardContainer.innerHTML = '';
+            
+            // Create wrapper div for board and labels
+            const wrapper = document.createElement('div');
+            wrapper.style.display = 'inline-block';
+            wrapper.style.position = 'relative';
+            
+            // Create file labels at top
+            const topLabels = document.createElement('div');
+            topLabels.style.display = 'flex';
+            topLabels.style.marginLeft = '20px';
+            topLabels.style.marginBottom = '2px';
+            for (let col = 0; col < 8; col++) {
+                const label = document.createElement('div');
+                label.className = 'file-label';
+                label.textContent = String.fromCharCode(97 + col);
+                topLabels.appendChild(label);
+            }
+            wrapper.appendChild(topLabels);
+            
+            // Create main board container
+            const boardDiv = document.createElement('div');
+            boardDiv.style.display = 'flex';
+            
+            // Create left rank labels
+            const leftLabels = document.createElement('div');
+            leftLabels.style.display = 'flex';
+            leftLabels.style.flexDirection = 'column';
+            leftLabels.style.marginRight = '2px';
+            for (let row = 0; row < 8; row++) {
+                const label = document.createElement('div');
+                label.className = 'rank-label';
+                label.textContent = (8 - row).toString();
+                leftLabels.appendChild(label);
+            }
+            boardDiv.appendChild(leftLabels);
+            
+            // Create the actual chess board
+            const board = document.createElement('div');
+            board.style.display = 'grid';
+            board.style.gridTemplateColumns = 'repeat(8, 60px)';
+            board.style.gridTemplateRows = 'repeat(8, 60px)';
+            board.style.border = '2px solid #333';
+            
+            for (let row = 0; row < 8; row++) {
+                for (let col = 0; col < 8; col++) {
+                    const square = document.createElement('div');
+                    square.className = `chess-square ${(row + col) % 2 === 0 ? 'light-square' : 'dark-square'}`;
+                    square.onclick = () => handleSolutionSquareClick(row, col);
+                    square.innerHTML = pieceSymbols[gameBoard[row][col]] || '';
+                    square.id = `solution-square-${row}-${col}`;
+                    board.appendChild(square);
+                }
+            }
+            boardDiv.appendChild(board);
+            wrapper.appendChild(boardDiv);
+            
+            // Create file labels at bottom
+            const bottomLabels = document.createElement('div');
+            bottomLabels.style.display = 'flex';
+            bottomLabels.style.marginLeft = '20px';
+            bottomLabels.style.marginTop = '2px';
+            for (let col = 0; col < 8; col++) {
+                const label = document.createElement('div');
+                label.className = 'file-label';
+                label.textContent = String.fromCharCode(97 + col);
+                bottomLabels.appendChild(label);
+            }
+            wrapper.appendChild(bottomLabels);
+            
+            boardContainer.appendChild(wrapper);
+        }
+
+        // Handle solution square click
+        function handleSolutionSquareClick(row, col) {
+            const piece = gameBoard[row][col];
+            
+            if (selectedSquare) {
+                // Try to move
+                if (isValidMove(selectedSquare.row, selectedSquare.col, row, col)) {
+                    makeSolutionMove(selectedSquare.row, selectedSquare.col, row, col);
+                }
+                clearSolutionSelection();
+            } else if (piece && isPieceColor(piece, currentTurn)) {
+                // Select piece
+                selectedSquare = { row, col };
+                document.getElementById(`solution-square-${row}-${col}`).classList.add('selected');
+                showSolutionPossibleMoves(row, col);
+            }
+        }
+
+        // Show possible moves for solution board
+        function showSolutionPossibleMoves(row, col) {
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    if (isValidMove(row, col, r, c)) {
+                        document.getElementById(`solution-square-${r}-${c}`).classList.add('possible-move');
+                    }
+                }
+            }
+        }
+
+        // Clear solution selection
+        function clearSolutionSelection() {
+            if (selectedSquare) {
+                document.getElementById(`solution-square-${selectedSquare.row}-${selectedSquare.col}`).classList.remove('selected');
+            }
+            selectedSquare = null;
+            
+            // Clear possible moves
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const square = document.getElementById(`solution-square-${r}-${c}`);
+                    if (square) {
+                        square.classList.remove('possible-move');
+                    }
+                }
+            }
+        }
+
+        // Make solution move
+        function makeSolutionMove(fromRow, fromCol, toRow, toCol) {
+            const piece = gameBoard[fromRow][fromCol];
+            const capturedPiece = gameBoard[toRow][toCol];
+            let specialMove = '';
+            
+            // Handle en passant capture
+            if (piece.toLowerCase() === 'p' && enPassantTarget && 
+                enPassantTarget.row === toRow && enPassantTarget.col === toCol) {
+                const capturedPawnRow = isPieceColor(piece, 'white') ? toRow + 1 : toRow - 1;
+                gameBoard[capturedPawnRow][toCol] = '';
+                specialMove = 'enpassant';
+            }
+            
+            // Handle castling
+            if (piece.toLowerCase() === 'k' && Math.abs(toCol - fromCol) === 2) {
+                const isKingside = toCol > fromCol;
+                const rookFromCol = isKingside ? 7 : 0;
+                const rookToCol = isKingside ? 5 : 3;
+                const rook = gameBoard[fromRow][rookFromCol];
+                
+                gameBoard[fromRow][rookToCol] = rook;
+                gameBoard[fromRow][rookFromCol] = '';
+                specialMove = isKingside ? 'castleKing' : 'castleQueen';
+            }
+            
+            // Make the move
+            gameBoard[toRow][toCol] = piece;
+            gameBoard[fromRow][fromCol] = '';
+            
+            // Update castling rights
+            if (piece.toLowerCase() === 'k') {
+                if (isPieceColor(piece, 'white')) {
+                    castlingRights.whiteKing = false;
+                    castlingRights.whiteQueenside = false;
+                } else {
+                    castlingRights.blackKing = false;
+                    castlingRights.blackQueenside = false;
+                }
+            }
+            
+            if (piece.toLowerCase() === 'r') {
+                if (isPieceColor(piece, 'white')) {
+                    if (fromCol === 0) castlingRights.whiteQueenside = false;
+                    if (fromCol === 7) castlingRights.whiteKing = false;
+                } else {
+                    if (fromCol === 0) castlingRights.blackQueenside = false;
+                    if (fromCol === 7) castlingRights.blackKing = false;
+                }
+            }
+            
+            // Set en passant target for pawn double moves
+            enPassantTarget = null;
+            if (piece.toLowerCase() === 'p' && Math.abs(toRow - fromRow) === 2) {
+                enPassantTarget = {
+                    row: isPieceColor(piece, 'white') ? fromRow - 1 : fromRow + 1,
+                    col: fromCol
+                };
+            }
+            
+            // Generate notation
+            const notation = generateNotation(piece, fromRow, fromCol, toRow, toCol, capturedPiece, specialMove);
+            moveHistory.push(notation);
+            
+            // Update display
+            initializeSolutionBoard();
+            updateSolutionNotations();
+            
+            // Switch turns
+            currentTurn = currentTurn === 'white' ? 'black' : 'white';
+            
+            // Check for checkmate after the move
+            const opponentColor = currentTurn === 'white' ? 'black' : 'white';
+            if (isInCheck(opponentColor) && isCheckmate(opponentColor)) {
+                gameEnded = true;
+                // Update the notation to include checkmate symbol if not already there
+                if (!moveHistory[moveHistory.length - 1].includes('#')) {
+                    moveHistory[moveHistory.length - 1] = moveHistory[moveHistory.length - 1].replace('+', '#');
+                    updateSolutionNotations();
+                }
+            }
+        }
+
+        // Update solution notations display
+        function updateSolutionNotations() {
+            const notationsBox = document.getElementById('solutionNotationsBox');
+            notationsBox.innerHTML = moveHistory.map((move, index) => {
+                const moveNumber = Math.floor(index / 2) + 1;
+                const isWhiteMove = index % 2 === 0;
+                return isWhiteMove ? `${moveNumber}. ${move}` : ` ${move}`;
+            }).join(' ');
+            notationsBox.scrollTop = notationsBox.scrollHeight;
+        }
+
+        // Save solution moves
+        async function saveSolutionMoves() {
+            if (moveHistory.length === 0) {
+                alert('Please make some moves before saving the solution');
+                return;
+            }
+
+            solutionCaptureData.capturedSolutions.push([...moveHistory]);
+            
+            if (solutionCaptureData.currentSolution < solutionCaptureData.solutionsNeeded) {
+                solutionCaptureData.currentSolution++;
+                openSolutionCaptureModal();
+            } else {
+                // All solutions captured, save the puzzle
+                const puzzleData = {
+                    ...solutionCaptureData.puzzleData,
+                    solutions: solutionCaptureData.capturedSolutions
+                };
+
+                // Show loading state
+                const saveButton = event.target;
+                const originalText = saveButton.textContent;
+                saveButton.textContent = 'Saving...';
+                saveButton.disabled = true;
+
+                try {
+                    await savePuzzleToFirestore(puzzleData);
+                    
+                    document.getElementById('puzzleTitle').value = '';
+                    document.getElementById('puzzleDescription').value = '';
+                    document.getElementById('firstMove').value = 'white';
+                    
+                    closeSolutionCaptureModal();
+                    
+                    alert('Puzzle with solutions saved successfully and is now available globally!');
+                    
+                    showSection('puzzles');
+                } catch (error) {
+                    // Error already handled in save function
+                } finally {
+                    saveButton.textContent = originalText;
+                    saveButton.disabled = false;
+                }
+            }
+        }
+
+        // Reset solution board
+        function resetSolutionBoard() {
+            gameBoard = JSON.parse(JSON.stringify(solutionCaptureData.puzzleData.board));
+            moveHistory = [];
+            currentTurn = solutionCaptureData.puzzleData.firstMove || 'white';
+            gameEnded = false;
+            
+            // Reset special move states
+            castlingRights = { whiteKing: true, whiteQueenside: true, blackKing: true, blackQueenside: true };
+            enPassantTarget = null;
+            
+            initializeSolutionBoard();
+            document.getElementById('solutionNotationsBox').innerHTML = '';
+        }
+
+        // Close solution capture modal
+        function closeSolutionCaptureModal() {
+            document.getElementById('solutionCaptureModal').classList.add('hidden');
+            clearSolutionSelection();
+        }
+
+
+
+        // Delete puzzle from card
+        function deletePuzzleFromCard(puzzleId, puzzleName, event) {
+            event.stopPropagation();
+            
+            // First confirmation
+            if (!confirm(`Are you sure you want to delete "${puzzleName}"? This action cannot be undone.`)) {
+                return;
+            }
+
+            // Show password modal for final confirmation
+            document.getElementById('passwordModal').setAttribute('data-delete-puzzle-id', puzzleId);
+            document.getElementById('passwordModal').setAttribute('data-target-section', 'delete-confirm');
+            document.getElementById('passwordModal').classList.remove('hidden');
+        }
+
+        // Confirm puzzle deletion after password verification
+        function confirmPuzzleDeletion(puzzleId) {
+            const puzzleIndex = puzzles.findIndex(p => p.id == puzzleId);
+            if (puzzleIndex === -1) {
+                alert('Puzzle not found');
+                return;
+            }
+            
+            // FIX: Delete from Firestore first
+            try {
+                const puzzleDocRef = window.firestore.doc(window.db, 'puzzles', puzzleId);
+                window.firestore.deleteDoc(puzzleDocRef);
+
+                const resultDocRef = window.firestore.doc(window.db, 'results', puzzleId);
+                window.firestore.deleteDoc(resultDocRef); // Also delete associated results
+                
+                alert(`Puzzle "${puzzles[puzzleIndex].title}" has been deleted successfully! The view will update shortly.`);
+                // The real-time listener will automatically remove it from the UI.
+            } catch (error) {
+                console.error("Error deleting puzzle from Firestore: ", error);
+                alert("Failed to delete puzzle from the cloud.");
+            }
+        }
+
+        // Display puzzles (sorted by most recent first)
+        function displayPuzzles() {
+            const puzzlesList = document.getElementById('puzzlesList');
+            puzzlesList.innerHTML = '';
+
+            if (puzzles.length === 0) {
+                puzzlesList.innerHTML = '<div class="text-center text-gray-500 py-8">No puzzles available yet. Create the first one!</div>';
+                return;
+            }
+            
+            // Data is already sorted by the Firestore query, no need to sort again here.
+            puzzles.forEach(puzzle => {
+                const puzzleCard = document.createElement('div');
+                puzzleCard.className = 'bg-white rounded-lg shadow-lg p-6';
+                const firstMoveText = puzzle.firstMove === 'white' ? 'White to move' : 'Black to move';
+                const firstMoveColor = puzzle.firstMove === 'white' ? 'text-blue-600' : 'text-gray-800';
+                
+                puzzleCard.innerHTML = `
+                    <div class="flex justify-between items-start mb-4">
+                        <h3 class="text-xl font-bold text-gray-800">${puzzle.title}</h3>
+                        <span class="text-sm text-gray-500">${new Date(puzzle.createdAt).toLocaleDateString()}</span>
+                    </div>
+                    <p class="text-gray-600 mb-3">${puzzle.description}</p>
+                    <div class="mb-4">
+                        <span class="inline-block px-3 py-1 text-sm font-semibold ${firstMoveColor} bg-gray-100 rounded-full">
+                            ${firstMoveText}
+                        </span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-sm text-gray-500">Created by: ${puzzle.createdBy}</span>
+                        <button onclick="solvePuzzle('${puzzle.id}')" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Solve Puzzle</button>
+                    </div>
+                `;
+                puzzlesList.appendChild(puzzleCard);
+            });
+        }
+
+        // Start puzzle timer
+        function startPuzzleTimer() {
+            puzzleStartTime = Date.now();
+            timerInterval = setInterval(updateTimer, 1000);
+        }
+
+        // Update timer display
+        function updateTimer() {
+            if (puzzleStartTime) {
+                const elapsed = Math.floor((Date.now() - puzzleStartTime) / 1000);
+                const minutes = Math.floor(elapsed / 60);
+                const seconds = elapsed % 60;
+                document.getElementById('puzzleTimer').textContent = 
+                    `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            }
+        }
+
+        // Stop puzzle timer
+        function stopPuzzleTimer() {
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+        }
+
+        // Get elapsed time
+        function getElapsedTime() {
+            if (puzzleStartTime) {
+                return Math.floor((Date.now() - puzzleStartTime) / 1000);
+            }
+            return 0;
+        }
+
+        // Solve puzzle
+        function solvePuzzle(puzzleId) {
+            const puzzle = puzzles.find(p => p.id == puzzleId);
+            if (!puzzle) {
+                console.error('Puzzle not found:', puzzleId);
+                alert('Puzzle not found. Please try refreshing the page.');
+                return;
+            }
+
+            currentPuzzleId = puzzleId;
+            currentPuzzleSolutions = puzzle.solutions || [];
+            // FIX: Ensure gameBoard is a valid 2D array before setting it
+            gameBoard = puzzle.board ? JSON.parse(JSON.stringify(puzzle.board)) : [];
+
+            if (gameBoard.length === 0) {
+                console.error('Board data for puzzle is empty or invalid.');
+                alert('Puzzle board data is corrupted. Please select another puzzle.');
+                return;
+            }
+
+            moveHistory = [];
+            currentTurn = puzzle.firstMove || 'white';
+            gameEnded = false;
+            selectedSquare = null;
+            
+            // Reset special move states
+            castlingRights = { whiteKing: true, whiteQueenside: true, blackKing: true, blackQueenside: true };
+            enPassantTarget = null;
+            
+            initializeSolveBoard();
+            highlightKingInCheck();
+            document.getElementById('solveModal').classList.remove('hidden');
+            
+            // Start timer
+            startPuzzleTimer();
+        }
+
+        // Initialize solve board
+        function initializeSolveBoard() {
+            // FIX: Check if gameBoard is valid before proceeding
+            if (!gameBoard || gameBoard.length === 0) {
+                console.error("gameBoard is not initialized. Cannot render board.");
+                return;
+            }
+
+            const boardContainer = document.getElementById('solveBoard');
+            boardContainer.innerHTML = '';
+            
+            // Create wrapper div for board and labels
+            const wrapper = document.createElement('div');
+            wrapper.style.display = 'inline-block';
+            wrapper.style.position = 'relative';
+            
+            // Create file labels at top
+            const topLabels = document.createElement('div');
+            topLabels.style.display = 'flex';
+            topLabels.style.marginLeft = '20px';
+            topLabels.style.marginBottom = '2px';
+            for (let col = 0; col < 8; col++) {
+                const label = document.createElement('div');
+                label.className = 'file-label';
+                label.textContent = String.fromCharCode(97 + col);
+                topLabels.appendChild(label);
+            }
+            wrapper.appendChild(topLabels);
+            
+            // Create main board container
+            const boardDiv = document.createElement('div');
+            boardDiv.style.display = 'flex';
+            
+            // Create left rank labels
+            const leftLabels = document.createElement('div');
+            leftLabels.style.display = 'flex';
+            leftLabels.style.flexDirection = 'column';
+            leftLabels.style.marginRight = '2px';
+            for (let row = 0; row < 8; row++) {
+                const label = document.createElement('div');
+                label.className = 'rank-label';
+                label.textContent = (8 - row).toString();
+                leftLabels.appendChild(label);
+            }
+            boardDiv.appendChild(leftLabels);
+            
+            // Create the actual chess board
+            const board = document.createElement('div');
+            board.style.display = 'grid';
+            board.style.gridTemplateColumns = 'repeat(8, 60px)';
+            board.style.gridTemplateRows = 'repeat(8, 60px)';
+            board.style.border = '2px solid #333';
+            
+            for (let row = 0; row < 8; row++) {
+                for (let col = 0; col < 8; col++) {
+                    const square = document.createElement('div');
+                    square.className = `chess-square ${(row + col) % 2 === 0 ? 'light-square' : 'dark-square'}`;
+                    square.onclick = () => handleSquareClick(row, col);
+                    square.innerHTML = pieceSymbols[gameBoard[row][col]] || '';
+                    square.id = `square-${row}-${col}`;
+                    board.appendChild(square);
+                }
+            }
+            boardDiv.appendChild(board);
+            wrapper.appendChild(boardDiv);
+            
+            // Create file labels at bottom
+            const bottomLabels = document.createElement('div');
+            bottomLabels.style.display = 'flex';
+            bottomLabels.style.marginLeft = '20px';
+            bottomLabels.style.marginTop = '2px';
+            for (let col = 0; col < 8; col++) {
+                const label = document.createElement('div');
+                label.className = 'file-label';
+                label.textContent = String.fromCharCode(97 + col);
+                bottomLabels.appendChild(label);
+            }
+            wrapper.appendChild(bottomLabels);
+            
+            boardContainer.appendChild(wrapper);
+        }
+
+        // Handle square click
+        function handleSquareClick(row, col) {
+            const piece = gameBoard[row][col];
+            
+            if (selectedSquare) {
+                // Try to move
+                if (isValidMove(selectedSquare.row, selectedSquare.col, row, col)) {
+                    makeMove(selectedSquare.row, selectedSquare.col, row, col);
+                }
+                clearSelection();
+            } else if (piece && isPieceColor(piece, currentTurn)) {
+                // Select piece
+                selectedSquare = { row, col };
+                document.getElementById(`square-${row}-${col}`).classList.add('selected');
+                showPossibleMoves(row, col);
+            }
+        }
+
+        // Check if piece belongs to current player
+        function isPieceColor(piece, color) {
+            if (color === 'white') {
+                return piece === piece.toUpperCase();
+            } else {
+                return piece === piece.toLowerCase();
+            }
+        }
+
+        // Show possible moves
+        function showPossibleMoves(row, col) {
+            const piece = gameBoard[row][col].toLowerCase();
+            
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    if (isValidMove(row, col, r, c)) {
+                        document.getElementById(`square-${r}-${c}`).classList.add('possible-move');
+                    }
+                }
+            }
+        }
+
+        // Clear selection
+        function clearSelection() {
+            if (selectedSquare) {
+                document.getElementById(`square-${selectedSquare.row}-${selectedSquare.col}`).classList.remove('selected');
+            }
+            selectedSquare = null;
+            
+            // Clear possible moves
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    document.getElementById(`square-${r}-${c}`).classList.remove('possible-move');
+                }
+            }
+        }
+
+        // Validate move with castling and en passant
+        function isValidMove(fromRow, fromCol, toRow, toCol) {
+            if (fromRow === toRow && fromCol === toCol) return false;
+            if (gameEnded) return false;
+            
+            const piece = gameBoard[fromRow][fromCol].toLowerCase();
+            const targetPiece = gameBoard[toRow][toCol];
+            
+            // Can't capture own piece
+            if (targetPiece && isPieceColor(targetPiece, currentTurn)) return false;
+            
+            // If in check, only allow moves that get out of check
+            if (isInCheck(currentTurn)) {
+                const originalPiece = gameBoard[toRow][toCol];
+                gameBoard[toRow][toCol] = gameBoard[fromRow][fromCol];
+                gameBoard[fromRow][fromCol] = '';
+                
+                const stillInCheck = isInCheck(currentTurn);
+                
+                // Restore board
+                gameBoard[fromRow][fromCol] = gameBoard[toRow][toCol];
+                gameBoard[toRow][toCol] = originalPiece;
+                
+                if (stillInCheck) return false;
+            }
+            
+            const rowDiff = Math.abs(toRow - fromRow);
+            const colDiff = Math.abs(toCol - fromCol);
+            
+            switch (piece) {
+                case 'p': // Pawn
+                    const direction = isPieceColor(gameBoard[fromRow][fromCol], 'white') ? -1 : 1;
+                    const startRow = isPieceColor(gameBoard[fromRow][fromCol], 'white') ? 6 : 1;
+                    
+                    if (colDiff === 0) { // Forward move
+                        if (targetPiece) return false; // Can't capture forward
+                        if (toRow === fromRow + direction) return true;
+                        if (fromRow === startRow && toRow === fromRow + 2 * direction && !gameBoard[fromRow + direction][fromCol]) return true;
+                    } else if (colDiff === 1 && toRow === fromRow + direction) { // Diagonal capture or en passant
+                        if (targetPiece !== '') return true; // Regular capture
+                        // En passant
+                        if (enPassantTarget && enPassantTarget.row === toRow && enPassantTarget.col === toCol) {
+                            return true;
+                        }
+                    }
+                    return false;
+                    
+                case 'r': // Rook
+                    if (rowDiff === 0 || colDiff === 0) {
+                        return isPathClear(fromRow, fromCol, toRow, toCol);
+                    }
+                    return false;
+                    
+                case 'n': // Knight
+                    return (rowDiff === 2 && colDiff === 1) || (rowDiff === 1 && colDiff === 2);
+                    
+                case 'b': // Bishop
+                    if (rowDiff === colDiff) {
+                        return isPathClear(fromRow, fromCol, toRow, toCol);
+                    }
+                    return false;
+                    
+                case 'q': // Queen
+                    if (rowDiff === 0 || colDiff === 0 || rowDiff === colDiff) {
+                        return isPathClear(fromRow, fromCol, toRow, toCol);
+                    }
+                    return false;
+                    
+                case 'k': // King
+                    if (rowDiff <= 1 && colDiff <= 1) return true;
+                    
+                    // Castling
+                    if (rowDiff === 0 && colDiff === 2) {
+                        const isWhite = isPieceColor(gameBoard[fromRow][fromCol], 'white');
+                        const kingRow = isWhite ? 7 : 0;
+                        
+                        if (fromRow !== kingRow) return false;
+                        
+                        // Kingside castling
+                        if (toCol === 6) {
+                            if (isWhite && !castlingRights.whiteKing) return false;
+                            if (!isWhite && !castlingRights.blackKing) return false;
+                            
+                            // Check if path is clear and king/rook haven't moved
+                            if (gameBoard[kingRow][7] === (isWhite ? 'R' : 'r') && 
+                                isPathClear(fromRow, fromCol, fromRow, 7)) {
+                                return !isInCheck(currentTurn) && 
+                                       !wouldBeInCheck(fromRow, fromCol, fromRow, fromCol + 1) &&
+                                       !wouldBeInCheck(fromRow, fromCol, fromRow, fromCol + 2);
+                            }
+                        }
+                        
+                        // Queenside castling
+                        if (toCol === 2) {
+                            if (isWhite && !castlingRights.whiteQueenside) return false;
+                            if (!isWhite && !castlingRights.blackQueenside) return false;
+                            
+                            if (gameBoard[kingRow][0] === (isWhite ? 'R' : 'r') && 
+                                isPathClear(fromRow, fromCol, fromRow, 0)) {
+                                return !isInCheck(currentTurn) && 
+                                       !wouldBeInCheck(fromRow, fromCol, fromRow, fromCol - 1) &&
+                                       !wouldBeInCheck(fromRow, fromCol, fromRow, fromCol - 2);
+                            }
+                        }
+                    }
+                    return false;
+                    
+                default:
+                    return false;
+            }
+        }
+
+        // Check if path is clear
+        function isPathClear(fromRow, fromCol, toRow, toCol) {
+            const rowStep = toRow > fromRow ? 1 : toRow < fromRow ? -1 : 0;
+            const colStep = toCol > fromCol ? 1 : toCol < fromCol ? -1 : 0;
+            
+            let currentRow = fromRow + rowStep;
+            let currentCol = fromCol + colStep;
+            
+            while (currentRow !== toRow || currentCol !== toCol) {
+                if (gameBoard[currentRow][currentCol] !== '') return false;
+                currentRow += rowStep;
+                currentCol += colStep;
+            }
+            
+            return true;
+        }
+
+        // Make move
+        function makeMove(fromRow, fromCol, toRow, toCol) {
+            const piece = gameBoard[fromRow][fromCol];
+            const capturedPiece = gameBoard[toRow][toCol];
+            let specialMove = '';
+            
+            // Handle en passant capture
+            if (piece.toLowerCase() === 'p' && enPassantTarget && 
+                enPassantTarget.row === toRow && enPassantTarget.col === toCol) {
+                const capturedPawnRow = isPieceColor(piece, 'white') ? toRow + 1 : toRow - 1;
+                gameBoard[capturedPawnRow][toCol] = '';
+                specialMove = 'enpassant';
+            }
+            
+            // Handle castling
+            if (piece.toLowerCase() === 'k' && Math.abs(toCol - fromCol) === 2) {
+                const isKingside = toCol > fromCol;
+                const rookFromCol = isKingside ? 7 : 0;
+                const rookToCol = isKingside ? 5 : 3;
+                const rook = gameBoard[fromRow][rookFromCol];
+                
+                gameBoard[fromRow][rookToCol] = rook;
+                gameBoard[fromRow][rookFromCol] = '';
+                specialMove = isKingside ? 'castleKing' : 'castleQueen';
+            }
+            
+            // Make the move
+            gameBoard[toRow][toCol] = piece;
+            gameBoard[fromRow][fromCol] = '';
+            
+            // Update castling rights
+            if (piece.toLowerCase() === 'k') {
+                if (isPieceColor(piece, 'white')) {
+                    castlingRights.whiteKing = false;
+                    castlingRights.whiteQueenside = false;
+                } else {
+                    castlingRights.blackKing = false;
+                    castlingRights.blackQueenside = false;
+                }
+            }
+            
+            if (piece.toLowerCase() === 'r') {
+                if (isPieceColor(piece, 'white')) {
+                    if (fromCol === 0) castlingRights.whiteQueenside = false;
+                    if (fromCol === 7) castlingRights.whiteKing = false;
+                } else {
+                    if (fromCol === 0) castlingRights.blackQueenside = false;
+                    if (fromCol === 7) castlingRights.blackKing = false;
+                }
+            }
+            
+            // Set en passant target for pawn double moves
+            enPassantTarget = null;
+            if (piece.toLowerCase() === 'p' && Math.abs(toRow - fromRow) === 2) {
+                enPassantTarget = {
+                    row: isPieceColor(piece, 'white') ? fromRow - 1 : fromRow + 1,
+                    col: fromCol
+                };
+            }
+            
+            // Generate notation
+            const notation = generateNotation(piece, fromRow, fromCol, toRow, toCol, capturedPiece, specialMove);
+            moveHistory.push(notation);
+            
+            // Update display
+            initializeSolveBoard();
+            updateNotations();
+            
+            // Switch turns
+            currentTurn = currentTurn === 'white' ? 'black' : 'white';
+            
+            // Check for checkmate after the move
+            const opponentColor = currentTurn === 'white' ? 'black' : 'white';
+            if (isInCheck(opponentColor) && isCheckmate(opponentColor)) {
+                gameEnded = true;
+                // Update the notation to include checkmate symbol if not already there
+                if (!moveHistory[moveHistory.length - 1].includes('#')) {
+                    moveHistory[moveHistory.length - 1] = moveHistory[moveHistory.length - 1].replace('+', '#');
+                    updateNotations();
+                }
+                setTimeout(() => {
+                    alert(`Checkmate! ${currentTurn === 'white' ? 'White' : 'Black'} wins!`);
+                }, 100);
+            }
+            
+            // Highlight king if in check
+            highlightKingInCheck();
+        }
+
+        // Generate chess notation
+        function generateNotation(piece, fromRow, fromCol, toRow, toCol, capturedPiece, specialMove) {
+            const files = 'abcdefgh';
+            const ranks = '87654321';
+            
+            let notation = '';
+            
+            // Handle castling
+            if (specialMove === 'castleKing') {
+                notation = 'O-O';
+            } else if (specialMove === 'castleQueen') {
+                notation = 'O-O-O';
+            } else {
+                const pieceType = piece.toUpperCase();
+                
+                if (pieceType !== 'P') {
+                    notation += pieceType;
+                }
+                
+                if (capturedPiece || specialMove === 'enpassant') {
+                    if (pieceType === 'P') {
+                        notation += files[fromCol];
+                    }
+                    notation += 'x';
+                }
+                
+                notation += files[toCol] + ranks[toRow];
+                
+                // Add en passant notation
+                if (specialMove === 'enpassant') {
+                    notation += ' e.p.';
+                }
+            }
+            
+            // Check for check (checkmate will be handled after the move is made)
+            const opponentColor = currentTurn === 'white' ? 'black' : 'white';
+            if (isInCheck(opponentColor)) {
+                notation += '+';
+            }
+            
+            return notation;
+        }
+
+        // Helper function to check if a move would put king in check
+        function wouldBeInCheck(fromRow, fromCol, toRow, toCol) {
+            const originalPiece = gameBoard[toRow][toCol];
+            const movingPiece = gameBoard[fromRow][fromCol];
+            
+            // Make temporary move
+            gameBoard[toRow][toCol] = movingPiece;
+            gameBoard[fromRow][fromCol] = '';
+            
+            const inCheck = isInCheck(currentTurn);
+            
+            // Restore board
+            gameBoard[fromRow][fromCol] = movingPiece;
+            gameBoard[toRow][toCol] = originalPiece;
+            
+            return inCheck;
+        }
+
+        // Simple check detection
+        function isInCheck(color) {
+            // Find king
+            let kingRow = -1, kingCol = -1;
+            const kingSymbol = color === 'white' ? 'K' : 'k';
+            
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    if (gameBoard[r][c] === kingSymbol) {
+                        kingRow = r;
+                        kingCol = c;
+                        break;
+                    }
+                }
+                if (kingRow !== -1) break;
+            }
+            
+            if (kingRow === -1) return false;
+            
+            // Check if any opponent piece can attack the king
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const piece = gameBoard[r][c];
+                    if (piece && !isPieceColor(piece, color)) {
+                        // Temporarily disable castling and en passant for attack checking
+                        const tempEnPassant = enPassantTarget;
+                        enPassantTarget = null;
+                        
+                        if (canPieceAttack(r, c, kingRow, kingCol)) {
+                            enPassantTarget = tempEnPassant;
+                            return true;
+                        }
+                        
+                        enPassantTarget = tempEnPassant;
+                    }
+                }
+            }
+            
+            return false;
+        }
+
+        // Check if piece can attack a square (without special moves)
+        function canPieceAttack(fromRow, fromCol, toRow, toCol) {
+            const piece = gameBoard[fromRow][fromCol].toLowerCase();
+            const rowDiff = Math.abs(toRow - fromRow);
+            const colDiff = Math.abs(toCol - fromCol);
+            
+            switch (piece) {
+                case 'p':
+                    const direction = isPieceColor(gameBoard[fromRow][fromCol], 'white') ? -1 : 1;
+                    return colDiff === 1 && toRow === fromRow + direction;
+                case 'r':
+                    return (rowDiff === 0 || colDiff === 0) && isPathClear(fromRow, fromCol, toRow, toCol);
+                case 'n':
+                    return (rowDiff === 2 && colDiff === 1) || (rowDiff === 1 && colDiff === 2);
+                case 'b':
+                    return rowDiff === colDiff && isPathClear(fromRow, fromCol, toRow, toCol);
+                case 'q':
+                    return (rowDiff === 0 || colDiff === 0 || rowDiff === colDiff) && isPathClear(fromRow, fromCol, toRow, toCol);
+                case 'k':
+                    return rowDiff <= 1 && colDiff <= 1;
+                default:
+                    return false;
+            }
+        }
+
+        // Check if it's checkmate
+        function isCheckmate(color) {
+            if (!isInCheck(color)) return false;
+            
+            // Try all possible moves for the color in check
+            for (let fromRow = 0; fromRow < 8; fromRow++) {
+                for (let fromCol = 0; fromCol < 8; fromCol++) {
+                    const piece = gameBoard[fromRow][fromCol];
+                    if (piece && isPieceColor(piece, color)) {
+                        // Try all possible destination squares
+                        for (let toRow = 0; toRow < 8; toRow++) {
+                            for (let toCol = 0; toCol < 8; toCol++) {
+                                if (fromRow === toRow && fromCol === toCol) continue;
+                                
+                                // Check basic move validity first
+                                if (isBasicMoveValid(fromRow, fromCol, toRow, toCol)) {
+                                    // Make temporary move
+                                    const originalPiece = gameBoard[toRow][toCol];
+                                    const originalEnPassant = enPassantTarget;
+                                    
+                                    // Handle en passant capture in temporary move
+                                    let enPassantCaptured = null;
+                                    if (piece.toLowerCase() === 'p' && enPassantTarget && 
+                                        enPassantTarget.row === toRow && enPassantTarget.col === toCol) {
+                                        const capturedPawnRow = isPieceColor(piece, 'white') ? toRow + 1 : toRow - 1;
+                                        enPassantCaptured = gameBoard[capturedPawnRow][toCol];
+                                        gameBoard[capturedPawnRow][toCol] = '';
+                                    }
+                                    
+                                    gameBoard[toRow][toCol] = piece;
+                                    gameBoard[fromRow][fromCol] = '';
+                                    
+                                    // Check if still in check
+                                    const stillInCheck = isInCheck(color);
+                                    
+                                    // Restore board
+                                    gameBoard[fromRow][fromCol] = piece;
+                                    gameBoard[toRow][toCol] = originalPiece;
+                                    enPassantTarget = originalEnPassant;
+                                    
+                                    // Restore en passant captured pawn
+                                    if (enPassantCaptured !== null) {
+                                        const capturedPawnRow = isPieceColor(piece, 'white') ? toRow + 1 : toRow - 1;
+                                        gameBoard[capturedPawnRow][toCol] = enPassantCaptured;
+                                    }
+                                    
+                                    // If this move gets out of check, it's not checkmate
+                                    if (!stillInCheck) {
+                                        return false;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            return true; // No legal moves found, it's checkmate
+        }
+
+        // Basic move validation without check considerations
+        function isBasicMoveValid(fromRow, fromCol, toRow, toCol) {
+            if (fromRow === toRow && fromCol === toCol) return false;
+            
+            const piece = gameBoard[fromRow][fromCol].toLowerCase();
+            const targetPiece = gameBoard[toRow][toCol];
+            
+            // Can't capture own piece
+            if (targetPiece && isPieceColor(targetPiece, isPieceColor(gameBoard[fromRow][fromCol], 'white') ? 'white' : 'black')) return false;
+            
+            const rowDiff = Math.abs(toRow - fromRow);
+            const colDiff = Math.abs(toCol - fromCol);
+            
+            switch (piece) {
+                case 'p': // Pawn
+                    const direction = isPieceColor(gameBoard[fromRow][fromCol], 'white') ? -1 : 1;
+                    const startRow = isPieceColor(gameBoard[fromRow][fromCol], 'white') ? 6 : 1;
+                    
+                    if (colDiff === 0) { // Forward move
+                        if (targetPiece) return false; // Can't capture forward
+                        if (toRow === fromRow + direction) return true;
+                        if (fromRow === startRow && toRow === fromRow + 2 * direction && !gameBoard[fromRow + direction][fromCol]) return true;
+                    } else if (colDiff === 1 && toRow === fromRow + direction) { // Diagonal capture or en passant
+                        if (targetPiece !== '') return true; // Regular capture
+                        // En passant
+                        if (enPassantTarget && enPassantTarget.row === toRow && enPassantTarget.col === toCol) {
+                            return true;
+                        }
+                    }
+                    return false;
+                    
+                case 'r': // Rook
+                    if (rowDiff === 0 || colDiff === 0) {
+                        return isPathClear(fromRow, fromCol, toRow, toCol);
+                    }
+                    return false;
+                    
+                case 'n': // Knight
+                    return (rowDiff === 2 && colDiff === 1) || (rowDiff === 1 && colDiff === 2);
+                    
+                case 'b': // Bishop
+                    if (rowDiff === colDiff) {
+                        return isPathClear(fromRow, fromCol, toRow, toCol);
+                    }
+                    return false;
+                    
+                case 'q': // Queen
+                    if (rowDiff === 0 || colDiff === 0 || rowDiff === colDiff) {
+                        return isPathClear(fromRow, fromCol, toRow, toCol);
+                    }
+                    return false;
+                    
+                case 'k': // King
+                    if (rowDiff <= 1 && colDiff <= 1) return true;
+                    
+                    // Castling
+                    if (rowDiff === 0 && colDiff === 2) {
+                        const isWhite = isPieceColor(gameBoard[fromRow][fromCol], 'white');
+                        const kingRow = isWhite ? 7 : 0;
+                        
+                        if (fromRow !== kingRow) return false;
+                        
+                        // Kingside castling
+                        if (toCol === 6) {
+                            if (isWhite && !castlingRights.whiteKing) return false;
+                            if (!isWhite && !castlingRights.blackKing) return false;
+                            
+                            // Check if path is clear and king/rook haven't moved
+                            if (gameBoard[kingRow][7] === (isWhite ? 'R' : 'r') && 
+                                isPathClear(fromRow, fromCol, fromRow, 7)) {
+                                return true;
+                            }
+                        }
+                        
+                        // Queenside castling
+                        if (toCol === 2) {
+                            if (isWhite && !castlingRights.whiteQueenside) return false;
+                            if (!isWhite && !castlingRights.blackQueenside) return false;
+                            
+                            if (gameBoard[kingRow][0] === (isWhite ? 'R' : 'r') && 
+                                isPathClear(fromRow, fromCol, fromRow, 0)) {
+                                return true;
+                            }
+                        }
+                    }
+                    return false;
+                    
+                default:
+                    return false;
+            }
+        }
+
+        // Get all legal moves for current player
+        function getLegalMoves(color) {
+            const legalMoves = [];
+            
+            for (let fromRow = 0; fromRow < 8; fromRow++) {
+                for (let fromCol = 0; fromCol < 8; fromCol++) {
+                    const piece = gameBoard[fromRow][fromCol];
+                    if (piece && isPieceColor(piece, color)) {
+                        for (let toRow = 0; toRow < 8; toRow++) {
+                            for (let toCol = 0; toCol < 8; toCol++) {
+                                if (isValidMove(fromRow, fromCol, toRow, toCol)) {
+                                    // Check if move doesn't leave king in check
+                                    const originalPiece = gameBoard[toRow][toCol];
+                                    gameBoard[toRow][toCol] = piece;
+                                    gameBoard[fromRow][fromCol] = '';
+                                    
+                                    const wouldBeInCheck = isInCheck(color);
+                                    
+                                    // Restore board
+                                    gameBoard[fromRow][fromCol] = piece;
+                                    gameBoard[toRow][toCol] = originalPiece;
+                                    
+                                    if (!wouldBeInCheck) {
+                                        legalMoves.push({ fromRow, fromCol, toRow, toCol });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            return legalMoves;
+        }
+
+        // Highlight king if in check
+        function highlightKingInCheck() {
+            // Clear previous highlights
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const square = document.getElementById(`square-${r}-${c}`);
+                    if (square) {
+                        square.classList.remove('king-in-check');
+                    }
+                }
+            }
+            
+            // Highlight king if in check
+            if (isInCheck(currentTurn)) {
+                const kingSymbol = currentTurn === 'white' ? 'K' : 'k';
+                for (let r = 0; r < 8; r++) {
+                    for (let c = 0; c < 8; c++) {
+                        if (gameBoard[r][c] === kingSymbol) {
+                            const square = document.getElementById(`square-${r}-${c}`);
+                            if (square) {
+                                square.classList.add('king-in-check');
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Update notations display
+        function updateNotations() {
+            const notationsBox = document.getElementById('notationsBox');
+            notationsBox.innerHTML = moveHistory.map((move, index) => {
+                const moveNumber = Math.floor(index / 2) + 1;
+                const isWhiteMove = index % 2 === 0;
+                return isWhiteMove ? `${moveNumber}. ${move}` : ` ${move}`;
+            }).join(' ');
+            notationsBox.scrollTop = notationsBox.scrollHeight;
+        }
+
+        // Reset puzzle
+        function resetPuzzle() {
+            const puzzle = puzzles.find(p => p.id === currentPuzzleId);
+            if (puzzle) {
+                gameBoard = puzzle.board ? JSON.parse(JSON.stringify(puzzle.board)) : [];
+                moveHistory = [];
+                currentTurn = puzzle.firstMove || 'white';
+                gameEnded = false;
+                
+                // Reset special move states
+                castlingRights = { whiteKing: true, whiteQueenside: true, blackKing: true, blackQueenside: true };
+                enPassantTarget = null;
+                
+                initializeSolveBoard();
+                document.getElementById('notationsBox').innerHTML = '';
+                highlightKingInCheck();
+            }
+        }
+
+        // Check if solution matches any of the stored solutions
+        function checkSolutionMatch(userMoves, storedSolutions) {
+            if (!storedSolutions || storedSolutions.length === 0) {
+                return true; // No stored solutions, accept any solution
+            }
+            
+            for (let solution of storedSolutions) {
+                if (userMoves.length === solution.length) {
+                    let matches = true;
+                    for (let i = 0; i < userMoves.length; i++) {
+                        if (userMoves[i] !== solution[i]) {
+                            matches = false;
+                            break;
+                        }
+                    }
+                    if (matches) return true;
+                }
+            }
+            return false;
+        }
+
+        // Check if user has already submitted solution today
+        function hasUserSubmittedToday(puzzleId, userName) {
+            if (!results[puzzleId]) return false;
+            
+            const today = new Date().toDateString();
+            return results[puzzleId].some(result => 
+                result.playerName === userName && 
+                new Date(result.submittedAt).toDateString() === today
+            );
+        }
+
+        // Submit solution
+        async function submitSolution() {
+            if (!currentPuzzleId || moveHistory.length === 0) {
+                alert('Please make some moves before submitting');
+                return;
+            }
+
+            // Check if user has already submitted today
+            if (hasUserSubmittedToday(currentPuzzleId, currentUserName)) {
+                alert('You have already submitted a solution for this puzzle today. Each user can submit only once per day.');
+                return;
+            }
+
+            const puzzle = puzzles.find(p => p.id === currentPuzzleId);
+            if (!puzzle) return;
+
+            const elapsedTime = getElapsedTime();
+            stopPuzzleTimer();
+
+            // Check if solution matches (only for puzzles with stored solutions)
+            const isCorrect = checkSolutionMatch(moveHistory, currentPuzzleSolutions);
+
+            const solution = {
+                playerName: currentUserName,
+                moves: [...moveHistory],
+                submittedAt: new Date().toISOString(),
+                moveCount: moveHistory.length,
+                timeSpent: elapsedTime,
+                isCorrect: isCorrect
+            };
+
+            // Show loading state
+            const submitButton = event.target;
+            const originalText = submitButton.textContent;
+            submitButton.textContent = 'Submitting...';
+            submitButton.disabled = true;
+
+            try {
+                await saveResultToFirestore(currentPuzzleId, solution);
+
+                let message = '';
+                if (puzzle.hasSolutions && !isCorrect) {
+                    message = 'Your solution has been recorded but does not match the expected solution. It will appear in the results section without ranking.';
+                }
+
+                closeSolveModal();
+                document.getElementById('successModal').classList.remove('hidden');
+
+                if (message) {
+                    // Show a slightly delayed alert so the success modal is visible first
+                    setTimeout(() => alert(message), 200);
+                }
+
+            } catch (error) {
+                // Error already alerted in save function
+            } finally {
+                submitButton.textContent = originalText;
+                submitButton.disabled = false;
+            }
+        }
+
+        // Close solve modal
+        function closeSolveModal() {
+            document.getElementById('solveModal').classList.add('hidden');
+            stopPuzzleTimer();
+            clearSelection();
+        }
+
+        // Close success modal
+        function closeSuccessModal() {
+            document.getElementById('successModal').classList.add('hidden');
+        }
+
+        // Verify password
+        function verifyPassword() {
+            const enteredPassword = document.getElementById('adminPassword').value;
+            const targetSection = document.getElementById('passwordModal').getAttribute('data-target-section');
+            const deletePuzzleId = document.getElementById('passwordModal').getAttribute('data-delete-puzzle-id');
+            
+            if (enteredPassword === adminPassword) {
+                // Set authorization for specific section only
+                if (targetSection === 'create') {
+                    isCreateAuthorized = true;
+                } else if (targetSection === 'results') {
+                    isResultsAuthorized = true;
+                }
+                
+                document.getElementById('passwordModal').classList.add('hidden');
+                document.getElementById('adminPassword').value = '';
+                document.getElementById('passwordError').classList.add('hidden');
+                
+                // Handle puzzle deletion
+                if (targetSection === 'delete-confirm' && deletePuzzleId) {
+                    confirmPuzzleDeletion(deletePuzzleId);
+                    document.getElementById('passwordModal').removeAttribute('data-delete-puzzle-id');
+                } else {
+                    showSection(targetSection);
+                }
+            } else {
+                document.getElementById('passwordError').classList.remove('hidden');
+                document.getElementById('adminPassword').value = '';
+            }
+        }
+
+        // Close password modal
+        function closePasswordModal() {
+            document.getElementById('passwordModal').classList.add('hidden');
+            document.getElementById('adminPassword').value = '';
+            document.getElementById('passwordError').classList.add('hidden');
+        }
+
+        // Toggle password visibility
+        function togglePasswordVisibility() {
+            const passwordInput = document.getElementById('adminPassword');
+            const eyeIcon = document.getElementById('eyeIcon');
+            const eyeOffIcon = document.getElementById('eyeOffIcon');
+            
+            if (passwordInput.type === 'password') {
+                passwordInput.type = 'text';
+                eyeIcon.classList.add('hidden');
+                eyeOffIcon.classList.remove('hidden');
+            } else {
+                passwordInput.type = 'password';
+                eyeIcon.classList.remove('hidden');
+                eyeOffIcon.classList.add('hidden');
+            }
+        }
+
+        // Handle Enter key in password field and username field
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('adminPassword').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    verifyPassword();
+                }
+            });
+            
+            document.getElementById('userName').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    enterSite();
+                }
+            });
+        });
+
+        // Format time display
+        function formatTime(seconds) {
+            const minutes = Math.floor(seconds / 60);
+            const remainingSeconds = seconds % 60;
+            return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+        }
+
+        // Display results
+        function displayResults() {
+            const resultsList = document.getElementById('resultsList');
+            resultsList.innerHTML = '';
+
+            if (Object.keys(results).length === 0) {
+                resultsList.innerHTML = '<div class="text-center text-gray-500 py-8">No results available yet.</div>';
+                return;
+            }
+
+            // Get puzzle IDs that have results and sort by puzzle creation date (newest first)
+            const puzzleIdsWithResults = Object.keys(results).filter(puzzleId => {
+                const puzzle = puzzles.find(p => p.id == puzzleId);
+                return puzzle; // Only include if puzzle still exists
+            });
+
+            puzzleIdsWithResults.sort((a, b) => {
+                const puzzleA = puzzles.find(p => p.id == a);
+                const puzzleB = puzzles.find(p => p.id == b);
+                if (!puzzleA || !puzzleB) return 0;
+                return new Date(puzzleB.createdAt) - new Date(puzzleA.createdAt);
+            });
+
+            puzzleIdsWithResults.forEach(puzzleId => {
+                const puzzle = puzzles.find(p => p.id == puzzleId);
+                if (!puzzle) return;
+
+                const puzzleResults = results[puzzleId];
+                
+                const resultCard = document.createElement('div');
+                resultCard.className = 'bg-white rounded-lg shadow-lg mb-4';
+                
+                // Create collapsible header
+                const header = document.createElement('div');
+                header.className = 'p-6 cursor-pointer hover:bg-gray-50 transition-colors duration-200';
+                header.onclick = () => toggleResultsSection(puzzleId);
+                
+                header.innerHTML = `
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <h3 class="text-xl font-bold text-gray-800 mb-2">${puzzle.title}</h3>
+                            <div class="flex items-center space-x-4">
+                                <span class="inline-block px-3 py-1 text-sm font-semibold ${puzzle.hasSolutions ? 'text-green-600 bg-green-100' : 'text-blue-600 bg-blue-100'} rounded-full">
+                                    ${puzzle.hasSolutions ? 'With Solution Validation' : 'Open Solution'}
+                                </span>
+                                <span class="text-sm text-gray-500">${puzzleResults.length} submission${puzzleResults.length !== 1 ? 's' : ''}</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center">
+                            <span class="text-sm text-gray-500 mr-2">Click to view results</span>
+                            <svg id="arrow-${puzzleId}" class="w-5 h-5 text-gray-400 transform transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                            </svg>
+                        </div>
+                    </div>
+                `;
+                
+                // Create collapsible content
+                const content = document.createElement('div');
+                content.id = `results-${puzzleId}`;
+                content.className = 'hidden border-t border-gray-200 p-6 space-y-3';
+                
+                // Separate correct and incorrect solutions
+                const correctSolutions = puzzleResults.filter(r => r.isCorrect !== false);
+                const incorrectSolutions = puzzleResults.filter(r => r.isCorrect === false);
+                
+                let contentHtml = '';
+                
+                if (puzzleResults.length === 0) {
+                    contentHtml = '<div class="text-gray-500">No submissions for this puzzle yet.</div>'
+                } else {
+                    // Display correct solutions with ranking
+                    if (correctSolutions.length > 0) {
+                        contentHtml += '<h4 class="font-semibold text-gray-800 mb-3">Correct Solutions (Ranked by Time)</h4>';
+                        correctSolutions.forEach((result, index) => {
+                            const rankColor = index === 0 ? 'border-yellow-400 bg-yellow-50' : 
+                                             index === 1 ? 'border-gray-400 bg-gray-50' : 
+                                             index === 2 ? 'border-orange-400 bg-orange-50' : 'border-gray-300';
+                            
+                            const rankIcon = index === 0 ? '🥇' : 
+                                            index === 1 ? '🥈' : 
+                                            index === 2 ? '🥉' : `#${index + 1}`;
+
+                            contentHtml += `
+                                <div class="border-l-4 ${rankColor} pl-4 py-2">
+                                    <div class="flex justify-between items-center">
+                                        <div class="flex items-center space-x-2">
+                                            <span class="text-lg">${rankIcon}</span>
+                                            <span class="font-semibold text-gray-800">${result.playerName}</span>
+                                            <span class="text-green-600 text-sm">✓ Correct</span>
+                                        </div>
+                                        <span class="text-sm text-gray-500">${new Date(result.submittedAt).toLocaleString()}</span>
+                                    </div>
+                                    <div class="text-sm text-gray-600 mt-1">
+                                        Time: ${formatTime(result.timeSpent || 0)} | Moves: ${result.moveCount} | Solution: ${result.moves.join(' ')}
+                                    </div>
+                                </div>
+                            `;
+                        });
+                    }
+                    
+                    // Display incorrect solutions without ranking
+                    if (incorrectSolutions.length > 0) {
+                        if (correctSolutions.length > 0) {
+                            contentHtml += '<div class="mt-6"></div>';
+                        }
+                        contentHtml += '<h4 class="font-semibold text-gray-800 mb-3">Other Submissions (Not ranked)</h4>';
+                        incorrectSolutions.forEach(result => {
+                            contentHtml += `
+                                <div class="border-l-4 border-red-400 bg-red-50 pl-4 py-2">
+                                    <div class="flex justify-between items-center">
+                                        <div class="flex items-center space-x-2">
+                                            <span class="text-lg"></span>
+                                            <span class="font-semibold text-gray-800">${result.playerName}</span>
+                                            <span class="text-red-600 text-sm">✗ Incorrect</span>
+                                        </div>
+                                        <span class="text-sm text-gray-500">${new Date(result.submittedAt).toLocaleString()}</span>
+                                    </div>
+                                    <div class="text-sm text-gray-600 mt-1">
+                                        Time: ${formatTime(result.timeSpent || 0)} | Moves: ${result.moveCount} | Solution: ${result.moves.join(' ')}
+                                    </div>
+                                </div>
+                            `;
+                        });
+                    }
+                }
+                
+                content.innerHTML = contentHtml;
+                
+                resultCard.appendChild(header);
+                resultCard.appendChild(content);
+                resultsList.appendChild(resultCard);
+            });
+        }
+
+        // Toggle results section
+        function toggleResultsSection(puzzleId) {
+            const content = document.getElementById(`results-${puzzleId}`);
+            const arrow = document.getElementById(`arrow-${puzzleId}`);
+            
+            if (content.classList.contains('hidden')) {
+                content.classList.remove('hidden');
+                arrow.classList.add('rotate-180');
+            } else {
+                content.classList.add('hidden');
+                arrow.classList.remove('rotate-180');
+            }
+        }
+    </script>
 </body>
 </html>
+
