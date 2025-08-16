@@ -15,6 +15,7 @@ import base64
 import io
 import json
 import os
+import re
 from datetime import datetime, timezone
 
 import requests
@@ -25,8 +26,18 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 
 
+# List of grandmasters for puzzle titles
+GRANDMASTERS = [
+    "Magnus Carlsen", "Garry Kasparov", "Bobby Fischer", "Anatoly Karpov",
+    "Mikhail Tal", "Jose Raul Capablanca", "Paul Morphy", "Emanuel Lasker",
+    "Viswanathan Anand", "Hikaru Nakamura", "Fabiano Caruana", "Wesley So",
+    "Ding Liren", "Ian Nepomniachtchi", "Alireza Firouzja", "Levon Aronian"
+]
+
+
 # ---------- Firebase init (from base64 secret) ----------
 def init_firebase_from_b64_env(env_key: str = "FIREBASE_CREDENTIALS") -> firestore.Client:
+    """Initializes Firebase from a base64-encoded service account key."""
     b64 = os.getenv(env_key)
     if not b64:
         raise RuntimeError(f"{env_key} is not set")
@@ -42,6 +53,7 @@ def init_firebase_from_b64_env(env_key: str = "FIREBASE_CREDENTIALS") -> firesto
 
 # ---------- Puzzle fetch & transform ----------
 def fetch_lichess_daily() -> dict:
+    """Fetches the daily puzzle from the Lichess API."""
     url = "https://lichess.org/api/puzzle/daily"
     r = requests.get(url, timeout=20)
     r.raise_for_status()
@@ -49,6 +61,7 @@ def fetch_lichess_daily() -> dict:
 
 
 def pgn_headers(pgn_text: str) -> dict:
+    """Parses PGN text to extract game headers."""
     game = chess.pgn.read_game(io.StringIO(pgn_text))
     if game is None:
         return {}
@@ -56,13 +69,12 @@ def pgn_headers(pgn_text: str) -> dict:
 
 
 def board_at_initial_fen(pgn_text: str, initial_ply: int) -> chess.Board:
-    """Return board position just before the puzzle's first solution move."""
+    """Returns the board position just before the puzzle's first solution move."""
     game = chess.pgn.read_game(io.StringIO(pgn_text))
     if game is None:
-        return chess.Board()  # fallback
+        return chess.Board()
 
     board = game.board()
-    # We want state after (initial_ply - 1) half-moves.
     target = max(0, int(initial_ply) - 1)
     for i, mv in enumerate(game.mainline_moves()):
         if i >= target:
@@ -72,21 +84,15 @@ def board_at_initial_fen(pgn_text: str, initial_ply: int) -> chess.Board:
 
 
 def uci_to_san_list(board: chess.Board, uci_moves: list[str]) -> list[str]:
-    """Convert a list of UCI strings into a flat list of SAN strings."""
+    """Converts a list of UCI strings into a flat list of SAN strings."""
     san = []
     b = board.copy()
     for u in uci_moves:
         mv = chess.Move.from_uci(u)
-        # Attempt to make the move, checking for legality or pseudo-legality
-        # This handles cases where Lichess solutions might include special moves or
-        # captures that the standard check might miss.
         if b.is_legal(mv):
             san.append(b.san(mv))
             b.push(mv)
         elif b.is_pseudo_legal(mv):
-            # If a move is pseudo-legal but not legal, it might be due to a
-            # king being in check. We'll try to push it and see if it works.
-            # This is a bit of a hack but necessary for some puzzle data.
             try:
                 san.append(b.san(mv))
                 b.push(mv)
@@ -99,39 +105,45 @@ def uci_to_san_list(board: chess.Board, uci_moves: list[str]) -> list[str]:
     return san
 
 
-def human_title(headers: dict, side_to_move: chess.Color, pid: str) -> str:
-    w = headers.get("White", "White")
-    b = headers.get("Black", "Black")
-    ev = headers.get("Event", "").strip()
-    year = headers.get("Date", "")[:4]
-    stm = "White" if side_to_move else "Black"
-    parts = [f"{w} vs {b}".strip()]
-    if ev:
-        parts.append(f"— {ev}")
-    if year and year != "????":
-        parts.append(f"({year})")
-    left = " ".join(parts).strip()
-    return f"{left} • {stm} to move • Lichess Daily #{pid}"
+def generate_puzzle_title(db: firestore.Client) -> str:
+    """
+    Generates a unique grandmaster name as a title by tracking used names in Firestore.
+    """
+    metadata_doc_ref = db.collection("metadata").document("grandmasters")
+    doc = metadata_doc_ref.get()
+    
+    if doc.exists:
+        data = doc.to_dict()
+        last_index = data.get("last_index", -1)
+    else:
+        last_index = -1
+    
+    new_index = (last_index + 1) % len(GRANDMASTERS)
+    title = GRANDMASTERS[new_index]
+    
+    metadata_doc_ref.set({"last_index": new_index}, merge=True)
+    
+    return title
+
+def generate_puzzle_description(san_moves: list[str]) -> str:
+    """
+    Generates a descriptive puzzle text based on the solution moves.
+    """
+    if not san_moves:
+        return "Find the best move to solve the puzzle."
+
+    last_move = san_moves[-1]
+    if last_move.endswith('#'):
+        return f"Find the forced mate in {len(san_moves)} moves."
+    elif last_move.endswith('+'):
+        return "Find the winning move that puts the opponent in check."
+    else:
+        return "Find the best move to gain a decisive advantage."
 
 
-def human_description(headers: dict, dt_utc: datetime) -> str:
-    site = headers.get("Site", "")
-    result = headers.get("Result", "")
-    ev = headers.get("Event", "")
-    when = dt_utc.strftime("%Y-%m-%d")
-    bits = [f"Daily puzzle {when}"]
-    if ev:
-        bits.append(f"Event: {ev}")
-    if site:
-        bits.append(f"Site: {site}")
-    if result:
-        bits.append(f"Game result: {result}")
-    return " • ".join(bits)
-
-def serialize_board_to_string(board) -> str:
+def serialize_board_to_string(board: chess.Board) -> str:
     """Converts a python-chess board object to a 64-character string representation."""
     board_str = board.board_fen().replace('/', '')
-    # Replace the FEN digits with an equivalent number of spaces
     board_str = board_str.replace('1', ' ')
     board_str = board_str.replace('2', '  ')
     board_str = board_str.replace('3', '   ')
@@ -141,6 +153,12 @@ def serialize_board_to_string(board) -> str:
     board_str = board_str.replace('7', '       ')
     board_str = board_str.replace('8', '        ')
     return board_str
+
+def sanitize_title_for_doc_id(title: str) -> str:
+    """Converts a string to a valid Firestore document ID."""
+    sanitized = title.lower().replace(" ", "-")
+    sanitized = re.sub(r'[^a-z0-9-]', '', sanitized)
+    return sanitized
 
 
 # ---------- Main ----------
@@ -160,47 +178,48 @@ def main():
     start_board = board_at_initial_fen(pgn, initial_ply)
     san_moves = uci_to_san_list(start_board, solution_uci)
     
-    # FIX: Check if the number of solution moves is within the limit (max 3)
     if len(san_moves) > 3:
         print(f"ℹ️ Skipping Lichess Daily #{pid}: Solution has {len(san_moves)} moves, which is more than the allowed 3.")
         return
 
-    # FIX: Convert the initial board position to the 64-character string
     serialized_board = serialize_board_to_string(start_board)
     side = "w" if start_board.turn else "b"
 
-    # 4) Human-friendly title/description from PGN headers
-    hdr = pgn_headers(pgn)
-    now = datetime.now(timezone.utc)
-    title = human_title(hdr, start_board.turn, pid)
-    description = human_description(hdr, now)
+    # 4) Generate title and description
+    title = generate_puzzle_title(db)
+    description = generate_puzzle_description(san_moves)
 
-    # 5) Firestore document (for puzzles collection)
+    # 5) Sanitize the title for document ID
+    doc_id = sanitize_title_for_doc_id(title)
+
+    # 6) Firestore document (for puzzles collection)
     puzzle_doc = {
         "puzzleId": pid,
         "title": title,
         "description": description,
-        "date": now.strftime("%Y-%m-%d"),
+        "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
         "createdAt": firestore.SERVER_TIMESTAMP,
         "createdBy": "lichess",
         "hasSolutions": True,
-        "firstMove": side,  # Use 'w' or 'b'
-        # FIX: Store board as a single serialized string
+        "firstMove": side,
         "board": serialized_board
     }
 
-    # 6) Firestore document (for solutions collection)
+    # 7) Firestore document (for solutions collection)
     solution_doc = {
         "solutions": san_moves,
         "lastUpdated": firestore.SERVER_TIMESTAMP,
         "puzzleId": pid
     }
 
-    # 7) Store documents
-    doc_ref = db.collection("puzzles").add(puzzle_doc)
-    db.collection("solutions").document(doc_ref.id).set(solution_doc)
+    # 8) Store documents with the new document ID
+    puzzle_doc_ref = db.collection("puzzles").document(doc_id)
+    puzzle_doc_ref.set(puzzle_doc)
+    
+    solution_doc_ref = db.collection("solutions").document(doc_id)
+    solution_doc_ref.set(solution_doc)
 
-    print(f"✅ Uploaded Lichess Daily #{pid} with {len(san_moves)} solution moves.")
+    print(f"✅ Uploaded Lichess Daily #{pid} with {len(san_moves)} solution moves. Title: {title}")
 
 
 if __name__ == "__main__":
