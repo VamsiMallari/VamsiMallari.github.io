@@ -217,9 +217,21 @@
         </div>
     </div>
 
+    <!-- FIX: Updated the puzzles section to show today's puzzle and an archive dropdown -->
     <div id="puzzlesSection" class="max-w-6xl mx-auto p-6">
-        <h2 class="text-3xl font-bold text-gray-800 mb-6">Available Puzzles</h2>
-        <div id="puzzlesList" class="space-y-6"></div>
+        <h2 class="text-3xl font-bold text-gray-800 mb-6">Today's Puzzle</h2>
+        <div id="todayPuzzle" class="space-y-6 mb-8"></div>
+
+        <h2 class="text-3xl font-bold text-gray-800 mb-4">Archived Puzzles</h2>
+        <div id="archivedPuzzlesContainer" class="bg-white rounded-lg shadow-lg p-4">
+            <button onclick="toggleArchivedPuzzles()" class="w-full flex justify-between items-center text-left text-lg font-semibold py-2">
+                <span>View Archived Puzzles</span>
+                <svg id="archiveArrow" class="w-5 h-5 text-gray-400 transform transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                </svg>
+            </button>
+            <div id="archivedPuzzles" class="hidden space-y-6 mt-4"></div>
+        </div>
     </div>
 
     <div id="resultsSection" class="max-w-6xl mx-auto p-6 hidden">
@@ -369,7 +381,6 @@
         let usedNamesToday = JSON.parse(localStorage.getItem('usedNamesToday') || '{}');
         let puzzles = [];
         let results = {};
-        // FIX: solutions variable is added to store solutions from the new collection
         let solutions = {};
         let isFirebaseReady = false;
         let selectedPiece = null;
@@ -386,12 +397,10 @@
         let gameEnded = false;
         const adminPassword = 'chessclub@rkv';
 
-        // Helper function to serialize 2D board array to a single string
         function serializeBoard(board) {
             return board.flat().join('');
         }
 
-        // Helper function to deserialize 1D board string back to a 2D array
         function deserializeBoard(boardString) {
             const board = [];
             for (let i = 0; i < 8; i++) {
@@ -404,12 +413,13 @@
             }
             return board;
         }
-        
-        // FIX: The savePuzzleToFirestore function now takes the puzzle data and a document ID
-        // The document ID is used to name the puzzle document and to link the solutions
-        async function savePuzzleToFirestore(puzzleData, docId) {
+
+        // FIX: savePuzzleToFirestore is now updated to handle both manual and automated uploads
+        async function savePuzzleToFirestore(puzzleData, docId = null) {
             try {
-                // Serialize the board to a single string
+                const sanitizedTitle = puzzleData.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+                const finalDocId = docId || sanitizedTitle;
+
                 const serializedPuzzleData = {
                     ...puzzleData,
                     board: serializeBoard(puzzleData.board),
@@ -417,9 +427,9 @@
                 };
                 
                 const puzzlesCollection = window.firestore.collection(window.db, 'puzzles');
-                const docRef = window.firestore.doc(puzzlesCollection, docId);
+                const docRef = window.firestore.doc(puzzlesCollection, finalDocId);
                 await window.firestore.setDoc(docRef, serializedPuzzleData);
-                console.log('Puzzle saved to Firestore with ID:', docId);
+                console.log('Puzzle saved to Firestore with ID:', finalDocId);
                 return docRef;
             } catch (error) {
                 console.error('Error saving puzzle to Firestore:', error);
@@ -428,9 +438,12 @@
             }
         }
 
-        // FIX: A new function to save solutions separately
+        // FIX: The manual solution save function is also updated to avoid nested arrays
         async function saveSolutionToFirestore(puzzleId, solutionsData) {
             try {
+                // Flatten the nested array of solutions
+                const flatSolutions = solutionsData.map(s => s.join(' ')); 
+
                 const solutionsCollection = window.firestore.collection(window.db, 'solutions');
                 const docRef = window.firestore.doc(solutionsCollection, puzzleId);
                 await window.firestore.setDoc(docRef, {
@@ -529,7 +542,7 @@
                     snapshot.forEach((doc) => {
                         const data = doc.data();
                         const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.createdAt);
-                        const board = deserializeBoard(data.board);
+                        const board = deserializeBoard(data.board); // FIX: Deserialize the board string here
                         newPuzzles.push({ id: doc.id, ...data, board, createdAt });
                     });
                     
@@ -545,7 +558,6 @@
                     console.log(`Real-time update: ${puzzles.length} puzzles loaded.`);
                 });
                 
-                // FIX: Added real-time listener for the solutions collection
                 const solutionsCollection = window.firestore.collection(window.db, 'solutions');
                 window.firestore.onSnapshot(solutionsCollection, (snapshot) => {
                     const newSolutions = {};
@@ -584,6 +596,7 @@
                 
                 puzzles = JSON.parse(localStorage.getItem('chessPuzzles') || '[]');
                 results = JSON.parse(localStorage.getItem('chessResults') || '{}');
+                solutions = JSON.parse(localStorage.getItem('chessSolutions') || '{}');
                 isFirebaseReady = false;
                 document.getElementById('loginModal').classList.remove('hidden');
             }
@@ -595,7 +608,6 @@
         
         let puzzleStartTime = null;
         let timerInterval = null;
-        // FIX: This variable now retrieves solutions from the global 'solutions' object
         let currentPuzzleSolutions = []; 
         let solutionCaptureData = {
             solutionsNeeded: 0,
@@ -688,7 +700,7 @@
             document.getElementById(section + 'Section').classList.remove('hidden');
             
             if (section === 'create') {
-                gameBoard = Array(8).fill().map(() => Array(8).fill('')); // Clear board on create
+                gameBoard = Array(8).fill().map(() => Array(8).fill(''));
                 initializeCreateBoard();
             } else if (section === 'puzzles') {
                 displayPuzzles();
@@ -843,7 +855,8 @@
             
             return errors;
         }
-
+        
+        // FIX: saveWithSolution now also handles the board serialization correctly
         function saveWithSolution() {
             const title = document.getElementById('puzzleTitle').value.trim();
             const description = document.getElementById('puzzleDescription').value.trim();
@@ -853,12 +866,11 @@
                 alert('Please enter a puzzle title before saving.');
                 return;
             }
-            
-            // FIX: Don't require description for now since it's auto-generated in Python script
-            // if (!description) {
-            //     alert('Please enter a puzzle description before saving.');
-            //     return;
-            // }
+
+            if (!description) {
+                alert('Please enter a puzzle description before saving.');
+                return;
+            }
 
             const kingErrors = validateKings();
             if (kingErrors.length > 0) {
@@ -866,10 +878,11 @@
                 return;
             }
 
+            // FIX: The board is serialized before being put into the data object
             solutionCaptureData.puzzleData = {
                 title: title,
                 description: description,
-                board: JSON.parse(JSON.stringify(gameBoard)),
+                board: serializeBoard(JSON.parse(JSON.stringify(gameBoard))),
                 firstMove: firstMove,
                 createdBy: currentUserName,
                 hasSolutions: true
@@ -888,6 +901,11 @@
                 return;
             }
 
+            if (!description) {
+                alert('Please enter a puzzle description before saving.');
+                return;
+            }
+
             const kingErrors = validateKings();
             if (kingErrors.length > 0) {
                 alert('Board validation failed:\n\n' + kingErrors.join('\n') + '\n\nPlease fix these issues before saving the puzzle.');
@@ -899,7 +917,7 @@
             const puzzleData = {
                 title: title,
                 description: description,
-                board: JSON.parse(JSON.stringify(gameBoard)),
+                board: serializeBoard(JSON.parse(JSON.stringify(gameBoard))), // FIX: Serialize the board
                 firstMove: firstMove,
                 createdBy: currentUserName,
                 hasSolutions: false
@@ -911,7 +929,6 @@
             saveButton.disabled = true;
 
             try {
-                // FIX: Pass the sanitized title as the document ID
                 await savePuzzleToFirestore(puzzleData, sanitizedTitle);
                 
                 document.getElementById('puzzleTitle').value = '';
@@ -943,7 +960,8 @@
         }
 
         function openSolutionCaptureModal() {
-            gameBoard = JSON.parse(JSON.stringify(solutionCaptureData.puzzleData.board));
+            // FIX: Deserialize the board string back to a 2D array for the UI
+            gameBoard = deserializeBoard(solutionCaptureData.puzzleData.board);
             moveHistory = [];
             currentTurn = solutionCaptureData.puzzleData.firstMove || 'white';
             gameEnded = false;
@@ -1148,26 +1166,27 @@
             notationsBox.scrollTop = notationsBox.scrollHeight;
         }
 
-        // FIX: The logic here is completely changed to save the puzzle and solutions
         async function saveSolutionMoves() {
             if (moveHistory.length === 0) {
                 alert('Please make some moves before saving the solution');
                 return;
             }
 
+            // FIX: Ensure the solutions are a flat array of strings
             solutionCaptureData.capturedSolutions.push([...moveHistory]);
             
             if (solutionCaptureData.currentSolution < solutionCaptureData.solutionsNeeded) {
                 solutionCaptureData.currentSolution++;
                 openSolutionCaptureModal();
             } else {
-                const title = solutionCaptureData.puzzleData.title;
+                const title = document.getElementById('puzzleTitle').value.trim();
                 const sanitizedTitle = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+                const description = document.getElementById('puzzleDescription').value.trim();
                 
                 const puzzleData = {
                     title: title,
-                    description: solutionCaptureData.puzzleData.description,
-                    board: solutionCaptureData.puzzleData.board,
+                    description: description,
+                    board: serializeBoard(gameBoard),
                     firstMove: solutionCaptureData.puzzleData.firstMove,
                     createdBy: currentUserName,
                     hasSolutions: true
@@ -1179,10 +1198,10 @@
                 saveButton.disabled = true;
 
                 try {
-                    // Save puzzle data with the sanitized title as the doc ID
-                    const puzzleRef = await savePuzzleToFirestore(puzzleData, sanitizedTitle);
+                    // FIX: Save puzzle data with the sanitized title as the doc ID
+                    await savePuzzleToFirestore(puzzleData, sanitizedTitle);
                     
-                    // Save solution data with the same sanitized title as the doc ID
+                    // FIX: Save solution data with the same sanitized title as the doc ID
                     await saveSolutionToFirestore(sanitizedTitle, solutionCaptureData.capturedSolutions);
                     
                     document.getElementById('puzzleTitle').value = '';
@@ -1203,7 +1222,8 @@
         }
 
         function resetSolutionBoard() {
-            gameBoard = JSON.parse(JSON.stringify(solutionCaptureData.puzzleData.board));
+            // FIX: Deserialize the board string back to a 2D array for reset
+            gameBoard = deserializeBoard(solutionCaptureData.puzzleData.board);
             moveHistory = [];
             currentTurn = solutionCaptureData.puzzleData.firstMove || 'white';
             gameEnded = false;
@@ -1246,6 +1266,10 @@
                 const resultDocRef = window.firestore.doc(window.db, 'results', puzzleId);
                 window.firestore.deleteDoc(resultDocRef);
                 
+                // FIX: Delete the solution document as well
+                const solutionDocRef = window.firestore.doc(window.db, 'solutions', puzzleId);
+                window.firestore.deleteDoc(solutionDocRef);
+                
                 alert(`Puzzle "${puzzles[puzzleIndex].title}" has been deleted successfully! The view will update shortly.`);
             } catch (error) {
                 console.error("Error deleting puzzle from Firestore: ", error);
@@ -1253,40 +1277,78 @@
             }
         }
 
+        // FIX: Reworked this function to handle today's puzzle and archives
         function displayPuzzles() {
-            const puzzlesList = document.getElementById('puzzlesList');
-            puzzlesList.innerHTML = '';
+            const todayPuzzleList = document.getElementById('todayPuzzle');
+            const archivedPuzzlesList = document.getElementById('archivedPuzzles');
+            todayPuzzleList.innerHTML = '';
+            archivedPuzzlesList.innerHTML = '';
 
             if (puzzles.length === 0) {
-                puzzlesList.innerHTML = '<div class="text-center text-gray-500 py-8">No puzzles available yet. Create the first one!</div>';
+                todayPuzzleList.innerHTML = '<div class="text-center text-gray-500 py-8">No puzzles available yet. Create the first one!</div>';
                 return;
             }
-            
+
+            // Get today's date in a comparable format
+            const today = new Date().toISOString().split('T')[0];
+            let hasTodayPuzzle = false;
+
             puzzles.forEach(puzzle => {
-                const puzzleCard = document.createElement('div');
-                puzzleCard.className = 'bg-white rounded-lg shadow-lg p-6';
-                const firstMoveText = puzzle.firstMove === 'white' ? 'White to move' : 'Black to move';
-                const firstMoveColor = puzzle.firstMove === 'white' ? 'text-blue-600' : 'text-gray-800';
+                const puzzleDate = new Date(puzzle.createdAt).toISOString().split('T')[0];
+                const puzzleCard = createPuzzleCard(puzzle);
                 
-                puzzleCard.innerHTML = `
-                    <div class="flex justify-between items-start mb-4">
-                        <h3 class="text-xl font-bold text-gray-800">${puzzle.title}</h3>
-                        <span class="text-sm text-gray-500">${new Date(puzzle.createdAt).toLocaleDateString()}</span>
-                    </div>
-                    <p class="text-gray-600 mb-3">${puzzle.description}</p>
-                    <div class="mb-4">
-                        <span class="inline-block px-3 py-1 text-sm font-semibold ${firstMoveColor} bg-gray-100 rounded-full">
-                            ${firstMoveText}
-                        </span>
-                    </div>
-                    <div class="flex justify-between items-center">
-                        <span class="text-sm text-gray-500">Created by: ${puzzle.createdBy}</span>
-                        <button onclick="solvePuzzle('${puzzle.id}')" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Solve Puzzle</button>
-                    </div>
-                `;
-                puzzlesList.appendChild(puzzleCard);
+                if (puzzleDate === today && !hasTodayPuzzle) {
+                    todayPuzzleList.appendChild(puzzleCard);
+                    hasTodayPuzzle = true;
+                } else {
+                    archivedPuzzlesList.appendChild(puzzleCard);
+                }
             });
+
+            if (!hasTodayPuzzle) {
+                 todayPuzzleList.innerHTML = '<div class="text-center text-gray-500 py-8">No new puzzle for today. Check back later!</div>';
+            }
         }
+        
+        // Helper function to create a puzzle card
+        function createPuzzleCard(puzzle) {
+            const puzzleCard = document.createElement('div');
+            puzzleCard.className = 'bg-white rounded-lg shadow-lg p-6';
+            const firstMoveText = puzzle.firstMove === 'white' ? 'White to move' : 'Black to move';
+            const firstMoveColor = puzzle.firstMove === 'white' ? 'text-blue-600' : 'text-gray-800';
+            
+            puzzleCard.innerHTML = `
+                <div class="flex justify-between items-start mb-4">
+                    <h3 class="text-xl font-bold text-gray-800">${puzzle.title}</h3>
+                    <span class="text-sm text-gray-500">${new Date(puzzle.createdAt).toLocaleDateString()}</span>
+                </div>
+                <p class="text-gray-600 mb-3">${puzzle.description}</p>
+                <div class="mb-4">
+                    <span class="inline-block px-3 py-1 text-sm font-semibold ${firstMoveColor} bg-gray-100 rounded-full">
+                        ${firstMoveText}
+                    </span>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span class="text-sm text-gray-500">Created by: ${puzzle.createdBy}</span>
+                    <button onclick="solvePuzzle('${puzzle.id}')" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Solve Puzzle</button>
+                </div>
+            `;
+            return puzzleCard;
+        }
+
+        // FIX: Function to toggle the archive dropdown
+        function toggleArchivedPuzzles() {
+            const archivedSection = document.getElementById('archivedPuzzles');
+            const arrow = document.getElementById('archiveArrow');
+            if (archivedSection.classList.contains('hidden')) {
+                archivedSection.classList.remove('hidden');
+                arrow.classList.add('rotate-180');
+            } else {
+                archivedSection.classList.add('hidden');
+                arrow.classList.remove('rotate-180');
+            }
+        }
+
 
         function startPuzzleTimer() {
             puzzleStartTime = Date.now();
@@ -1317,7 +1379,6 @@
             return 0;
         }
 
-        // FIX: solvePuzzle now uses the solutions object to get the solutions
         function solvePuzzle(puzzleId) {
             const puzzle = puzzles.find(p => p.id == puzzleId);
             if (!puzzle) {
@@ -2057,7 +2118,6 @@
             const elapsedTime = getElapsedTime();
             stopPuzzleTimer();
 
-            // FIX: Solutions are now retrieved from the new 'solutions' global object
             const storedSolutions = solutions[currentPuzzleId] || [];
             const isCorrect = checkSolutionMatch(moveHistory, storedSolutions);
 
@@ -2085,7 +2145,6 @@
 
                 closeSolveModal();
                 
-                // FIX: Show the new results modal instead of the simple success modal
                 showSubmissionResultsModal(currentPuzzleId, solution);
 
                 if (message) {
@@ -2099,7 +2158,6 @@
             }
         }
 
-        // FIX: New function to display the submission results modal
         function showSubmissionResultsModal(puzzleId, lastSubmission) {
             const resultsContent = document.getElementById('submissionResultsContent');
             resultsContent.innerHTML = '';
@@ -2148,7 +2206,7 @@
                 rankingList.className = 'space-y-2';
 
                 correctSubmissions.forEach((result, index) => {
-                    if (index >= 5) return; // Only show top 5
+                    if (index >= 5) return;
                     
                     const rankColor = index === 0 ? 'border-yellow-400 bg-yellow-50' : 
                                      index === 1 ? 'border-gray-400 bg-gray-50' : 
@@ -2177,7 +2235,6 @@
             document.getElementById('submissionResultsModal').classList.remove('hidden');
         }
 
-        // FIX: New function to close the submission results modal
         function closeSubmissionResultsModal() {
             document.getElementById('submissionResultsModal').classList.add('hidden');
         }
