@@ -16,7 +16,7 @@ import io
 import json
 import os
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import requests
 import chess
@@ -132,13 +132,12 @@ def generate_puzzle_description(san_moves: list[str]) -> str:
     if not san_moves:
         return "Find the best move to solve the puzzle."
 
+    num_moves = len(san_moves)
     last_move = san_moves[-1]
     if last_move.endswith('#'):
-        return f"Find the forced mate in {len(san_moves)} moves."
-    elif last_move.endswith('+'):
-        return "Find the winning move that puts the opponent in check."
+        return f"Find the forced mate in {num_moves} moves."
     else:
-        return "Find the best move to gain a decisive advantage."
+        return f"Find the best move to gain a decisive advantage in {num_moves} moves."
 
 
 def serialize_board_to_string(board: chess.Board) -> str:
@@ -160,13 +159,46 @@ def sanitize_title_for_doc_id(title: str) -> str:
     sanitized = re.sub(r'[^a-z0-9-]', '', sanitized)
     return sanitized
 
+def delete_old_puzzles(db: firestore.Client):
+    """Deletes puzzles and their solutions that are older than one month."""
+    one_month_ago = datetime.now(timezone.utc) - timedelta(days=30)
+    
+    puzzles_collection = db.collection("puzzles")
+    old_puzzles_query = puzzles_collection.where("createdAt", "<", one_month_ago)
+    
+    # Get all old puzzles
+    old_puzzles = old_puzzles_query.stream()
+    
+    deleted_count = 0
+    for puzzle_doc in old_puzzles:
+        puzzle_id = puzzle_doc.id
+        
+        # Delete puzzle document
+        puzzle_doc.reference.delete()
+        
+        # Delete corresponding solution document
+        solution_doc_ref = db.collection("solutions").document(puzzle_id)
+        solution_doc_ref.delete()
+
+        # Delete corresponding results document
+        results_doc_ref = db.collection("results").document(puzzle_id)
+        results_doc_ref.delete()
+        
+        deleted_count += 1
+        print(f"🗑️ Deleted old puzzle with ID: {puzzle_id}")
+    
+    print(f"✅ Finished deleting {deleted_count} old puzzles.")
+
 
 # ---------- Main ----------
 def main():
     # 1) Firebase
     db = init_firebase_from_b64_env()
 
-    # 2) Fetch daily puzzle
+    # 2) Delete old puzzles first
+    delete_old_puzzles(db)
+
+    # 3) Fetch daily puzzle
     data = fetch_lichess_daily()
 
     pid = data["puzzle"]["id"]
@@ -174,7 +206,7 @@ def main():
     pgn = data["game"]["pgn"]
     solution_uci = data["puzzle"]["solution"]
 
-    # 3) Build board at puzzle start & derive SAN moves
+    # 4) Build board at puzzle start & derive SAN moves
     start_board = board_at_initial_fen(pgn, initial_ply)
     san_moves = uci_to_san_list(start_board, solution_uci)
     
@@ -185,14 +217,14 @@ def main():
     serialized_board = serialize_board_to_string(start_board)
     side = "w" if start_board.turn else "b"
 
-    # 4) Generate title and description
+    # 5) Generate title and description
     title = generate_puzzle_title(db)
     description = generate_puzzle_description(san_moves)
 
-    # 5) Sanitize the title for document ID
+    # 6) Sanitize the title for document ID
     doc_id = sanitize_title_for_doc_id(title)
 
-    # 6) Firestore document (for puzzles collection)
+    # 7) Firestore document (for puzzles collection)
     puzzle_doc = {
         "puzzleId": pid,
         "title": title,
@@ -205,14 +237,14 @@ def main():
         "board": serialized_board
     }
 
-    # 7) Firestore document (for solutions collection)
+    # 8) Firestore document (for solutions collection)
     solution_doc = {
         "solutions": san_moves,
         "lastUpdated": firestore.SERVER_TIMESTAMP,
         "puzzleId": pid
     }
 
-    # 8) Store documents with the new document ID
+    # 9) Store documents with the new document ID
     puzzle_doc_ref = db.collection("puzzles").document(doc_id)
     puzzle_doc_ref.set(puzzle_doc)
     
