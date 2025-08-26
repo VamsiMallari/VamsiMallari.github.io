@@ -400,7 +400,8 @@
         function serializeBoard(board) {
             return board.flat().join('');
         }
-   function deserializeBoard(boardString) {
+
+        function deserializeBoard(boardString) {
             const board = [];
             for (let i = 0; i < 8; i++) {
                 const row = [];
@@ -412,7 +413,6 @@
             }
             return board;
         }
-
 
         // FIX: savePuzzleToFirestore is now updated to handle both manual and automated uploads
         async function savePuzzleToFirestore(puzzleData, docId = null) {
