@@ -401,13 +401,23 @@
             return board.flat().join('');
         }
 function deserializeBoard(boardString) {
-    const tokens = boardString.trim().split(/\s+/); // split by spaces
+    if (!boardString) return Array(8).fill().map(() => Array(8).fill(''));
+
+    let tokens;
+    if (boardString.includes(" ")) {
+        // old style with spaces
+        tokens = boardString.trim().split(/\s+/);
+    } else {
+        // new compact 64-char string
+        tokens = boardString.split('');
+    }
+
     const board = [];
     for (let i = 0; i < 8; i++) {
         const row = [];
         for (let j = 0; j < 8; j++) {
             const piece = tokens[i * 8 + j] || '';
-            row.push(piece === '.' || piece === ' ' ? '' : piece);
+            row.push(piece === '.' ? '' : piece);
         }
         board.push(row);
     }
