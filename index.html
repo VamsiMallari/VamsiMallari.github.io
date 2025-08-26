@@ -400,19 +400,20 @@
         function serializeBoard(board) {
             return board.flat().join('');
         }
-
-        function deserializeBoard(boardString) {
-            const board = [];
-            for (let i = 0; i < 8; i++) {
-                const row = [];
-                for (let j = 0; j < 8; j++) {
-                    const piece = boardString[i * 8 + j];
-                    row.push(piece === ' ' ? '' : piece);
-                }
-                board.push(row);
-            }
-            return board;
+function deserializeBoard(boardString) {
+    const tokens = boardString.trim().split(/\s+/); // split by spaces
+    const board = [];
+    for (let i = 0; i < 8; i++) {
+        const row = [];
+        for (let j = 0; j < 8; j++) {
+            const piece = tokens[i * 8 + j] || '';
+            row.push(piece === '.' || piece === ' ' ? '' : piece);
         }
+        board.push(row);
+    }
+    return board;
+}
+
 
         // FIX: savePuzzleToFirestore is now updated to handle both manual and automated uploads
         async function savePuzzleToFirestore(puzzleData, docId = null) {
