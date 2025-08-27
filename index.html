@@ -217,6 +217,7 @@
         </div>
     </div>
 
+    <!-- FIX: Updated the puzzles section to show today's puzzle and an archive dropdown -->
     <div id="puzzlesSection" class="max-w-6xl mx-auto p-6">
         <h2 class="text-3xl font-bold text-gray-800 mb-6">Today's Puzzle</h2>
         <div id="todayPuzzle" class="space-y-6 mb-8"></div>
@@ -296,6 +297,7 @@
         </div>
     </div>
     
+    <!-- FIX: New modal to display results immediately after submission -->
     <div id="submissionResultsModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
         <div class="bg-white p-6 rounded-lg shadow-xl results-modal max-w-2xl mx-4 w-full">
             <div class="flex justify-between items-center mb-6">
@@ -303,7 +305,8 @@
                 <button onclick="closeSubmissionResultsModal()" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
             </div>
             <div id="submissionResultsContent" class="space-y-4">
-                </div>
+                <!-- Results will be dynamically inserted here -->
+            </div>
         </div>
     </div>
 
@@ -448,7 +451,7 @@
                     lastUpdated: new Date()
                 });
                 console.log('Solutions saved to Firestore for puzzle ID:', puzzleId);
-            } catch (error)
+            } catch (error) {
                 console.error('Error saving solutions to Firestore:', error);
                 alert('Could not save solutions to the cloud. Check console for errors.');
                 throw error;
@@ -1279,7 +1282,7 @@
             const todayPuzzleList = document.getElementById('todayPuzzle');
             const archivedPuzzlesList = document.getElementById('archivedPuzzles');
             todayPuzzleList.innerHTML = '';
-            archivedPzzlesList.innerHTML = '';
+            archivedPuzzlesList.innerHTML = '';
 
             if (puzzles.length === 0) {
                 todayPuzzleList.innerHTML = '<div class="text-center text-gray-500 py-8">No puzzles available yet. Create the first one!</div>';
@@ -1387,12 +1390,7 @@
             currentPuzzleId = puzzleId;
             currentPuzzleSolutions = solutions[puzzleId] || [];
 
-            // ******** FIX START ********
-            // The puzzle.board is already a 2D array from when it was first loaded.
-            // We create a deep copy to prevent moves from affecting the original data.
-            // We no longer call deserializeBoard() here.
-            gameBoard = puzzle.board ? JSON.parse(JSON.stringify(puzzle.board)) : [];
-            // ******** FIX END ********
+            gameBoard = puzzle.board ? deserializeBoard(puzzle.board) : [];
 
             if (gameBoard.length === 0) {
                 console.error('Board data for puzzle is empty or invalid.');
@@ -2059,11 +2057,7 @@
         function resetPuzzle() {
             const puzzle = puzzles.find(p => p.id === currentPuzzleId);
             if (puzzle) {
-                // ******** FIX START ********
-                // Same fix as in solvePuzzle(). Use the already-processed 2D array.
-                gameBoard = puzzle.board ? JSON.parse(JSON.stringify(puzzle.board)) : [];
-                // ******** FIX END ********
-
+                gameBoard = puzzle.board ? deserializeBoard(puzzle.board) : [];
                 moveHistory = [];
                 currentTurn = puzzle.firstMove || 'white';
                 gameEnded = false;
