@@ -1390,7 +1390,7 @@
             currentPuzzleId = puzzleId;
             currentPuzzleSolutions = solutions[puzzleId] || [];
 
-            gameBoard = puzzle.board ? deserializeBoard(puzzle.board) : [];
+            gameBoard = puzzle.board ? JSON.parse(JSON.stringify(puzzle.board)) : [];
 
             if (gameBoard.length === 0) {
                 console.error('Board data for puzzle is empty or invalid.');
@@ -2057,7 +2057,7 @@
         function resetPuzzle() {
             const puzzle = puzzles.find(p => p.id === currentPuzzleId);
             if (puzzle) {
-                gameBoard = puzzle.board ? deserializeBoard(puzzle.board) : [];
+             gameBoard = puzzle.board ? JSON.parse(JSON.stringify(puzzle.board)) : [];
                 moveHistory = [];
                 currentTurn = puzzle.firstMove || 'white';
                 gameEnded = false;
