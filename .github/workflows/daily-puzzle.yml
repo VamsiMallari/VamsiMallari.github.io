@@ -2,8 +2,8 @@ name: Upload Daily Puzzle
 
 on:
   schedule:
-    # 05:30 UTC every day – adjust as you like
-    - cron: "30 5 * * *"
+    # Runs at 18:30 UTC, which is 12:00 AM IST
+    - cron: "30 18 * * *"
   workflow_dispatch: {}   # allow manual re-run from Actions tab
 
 permissions:
