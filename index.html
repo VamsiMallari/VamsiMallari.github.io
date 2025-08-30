@@ -10,6 +10,7 @@
         // Import Firebase modules
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
         import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, setDoc, onSnapshot, query, where, orderBy, getDoc } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut, updateProfile } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
         
         // Firebase configuration
         const firebaseConfig = {
@@ -25,10 +26,13 @@
         // Initialize Firebase
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
+        const auth = getAuth(app);
         
         // Make Firebase available globally
         window.db = db;
+        window.auth = auth;
         window.firestore = { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, setDoc, onSnapshot, query, where, orderBy, getDoc };
+        window.firebaseAuth = { createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut, updateProfile };
         
         // Initialize the app after Firebase is ready
         window.initializeChessApp();
@@ -129,17 +133,47 @@
             <p class="text-gray-600 mt-2">Connecting to cloud database</p>
         </div>
     </div>
-    <div id="loginModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+    <div id="authModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
         <div class="bg-white p-8 rounded-lg shadow-xl max-w-md w-full mx-4">
-            <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Welcome to Chess Puzzles Hub</h2>
-            <div class="mb-4">
-                <label class="block text-gray-700 text-sm font-bold mb-2">Enter Your Name:</label>
-                <input type="text" id="userName" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500" placeholder="Your unique name for today">
+            <div id="loginForm">
+                <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Login</h2>
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Email:</label>
+                    <input type="email" id="loginEmail" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500" placeholder="your@email.com">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Password:</label>
+                    <input type="password" id="loginPassword" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500" placeholder="Your password">
+                </div>
+                <div id="loginError" class="text-red-500 text-sm mb-4 hidden"></div>
+                <button onclick="loginUser()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Login</button>
+                <p class="text-center text-sm text-gray-600 mt-4">
+                    Don't have an account? <button onclick="toggleAuthForm()" class="text-blue-600 hover:underline">Register here</button>
+                </p>
             </div>
-            <div id="nameError" class="text-red-500 text-sm mb-4 hidden">This name has already been used today. Please choose another name.</div>
-            <button onclick="enterSite()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Enter Site</button>
+            <div id="registerForm" class="hidden">
+                <h2 class="text-2xl font-bold text-gray-800 mb-6 text-center">Register</h2>
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Username:</label>
+                    <input type="text" id="registerUsername" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500" placeholder="Choose a username">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Email:</label>
+                    <input type="email" id="registerEmail" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500" placeholder="your@email.com">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Password:</label>
+                    <input type="password" id="registerPassword" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:border-blue-500" placeholder="Create a password">
+                </div>
+                <div id="registerError" class="text-red-500 text-sm mb-4 hidden"></div>
+                <button onclick="registerUser()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition duration-200">Register</button>
+                <p class="text-center text-sm text-gray-600 mt-4">
+                    Already have an account? <button onclick="toggleAuthForm()" class="text-blue-600 hover:underline">Login here</button>
+                </p>
+            </div>
         </div>
     </div>
+
 
     <nav class="bg-white shadow-lg">
         <div class="max-w-7xl mx-auto px-4">
@@ -150,7 +184,10 @@
                     <button onclick="showSection('puzzles')" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition duration-200">View Puzzles</button>
                     <button onclick="showSection('results')" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition duration-200">Results</button>
                 </div>
-                <div class="text-gray-600">Welcome, <span id="currentUser" class="font-semibold"></span></div>
+                <div id="userInfo" class="hidden items-center">
+                    <span class="text-gray-600">Welcome, <span id="currentUser" class="font-semibold"></span></span>
+                    <button onclick="logoutUser()" class="ml-4 bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg text-sm">Logout</button>
+                </div>
             </div>
         </div>
     </nav>
@@ -217,7 +254,6 @@
         </div>
     </div>
 
-    <!-- FIX: Updated the puzzles section to show today's puzzle and an archive dropdown -->
     <div id="puzzlesSection" class="max-w-6xl mx-auto p-6">
         <h2 class="text-3xl font-bold text-gray-800 mb-6">Today's Puzzle</h2>
         <div id="todayPuzzle" class="space-y-6 mb-8"></div>
@@ -297,7 +333,6 @@
         </div>
     </div>
     
-    <!-- FIX: New modal to display results immediately after submission -->
     <div id="submissionResultsModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
         <div class="bg-white p-6 rounded-lg shadow-xl results-modal max-w-2xl mx-4 w-full">
             <div class="flex justify-between items-center mb-6">
@@ -305,8 +340,7 @@
                 <button onclick="closeSubmissionResultsModal()" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
             </div>
             <div id="submissionResultsContent" class="space-y-4">
-                <!-- Results will be dynamically inserted here -->
-            </div>
+                </div>
         </div>
     </div>
 
@@ -377,8 +411,7 @@
 
     <script>
         // Global variables
-        let currentUserName = '';
-        let usedNamesToday = JSON.parse(localStorage.getItem('usedNamesToday') || '{}');
+        let currentUser = null;
         let puzzles = [];
         let results = {};
         let solutions = {};
@@ -414,7 +447,6 @@
             return board;
         }
 
-        // FIX: savePuzzleToFirestore is now updated to handle both manual and automated uploads
         async function savePuzzleToFirestore(puzzleData, docId = null) {
             try {
                 const sanitizedTitle = puzzleData.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
@@ -438,10 +470,8 @@
             }
         }
 
-        // FIX: The manual solution save function is also updated to avoid nested arrays
         async function saveSolutionToFirestore(puzzleId, solutionsData) {
             try {
-                // Flatten the nested array of solutions
                 const flatSolutions = solutionsData.map(s => s.join(' ')); 
 
                 const solutionsCollection = window.firestore.collection(window.db, 'solutions');
@@ -490,50 +520,26 @@
                 throw error;
             }
         }
-        
-        async function saveUserNamesToFirestore() {
-            try {
-                const today = new Date().toISOString().split('T')[0];
-                const userNamesDocRef = window.firestore.doc(window.db, 'userNames', today);
-                
-                await window.firestore.setDoc(userNamesDocRef, {
-                    names: usedNamesToday[new Date().toDateString()] || []
-                });
-                
-                console.log('User names saved to Firestore for date:', today);
-            } catch (error) {
-                console.error('Error saving user names to Firestore:', error);
-            }
-        }
-
-        async function loadUserNamesFromFirestore() {
-            try {
-                const today = new Date().toISOString().split('T')[0];
-                const todayString = new Date().toDateString();
-                const userNamesDocRef = window.firestore.doc(window.db, 'userNames', today);
-                const docSnap = await window.firestore.getDoc(userNamesDocRef);
-                
-                if (docSnap.exists()) {
-                    const cloudNames = docSnap.data().names || [];
-                    const localNames = usedNamesToday[todayString] || [];
-                    usedNamesToday[todayString] = [...new Set([...localNames, ...cloudNames])];
-                }
-                
-                console.log('User names loaded from Firestore');
-                return usedNamesToday;
-            } catch (error) {
-                console.error('Error loading user names from Firestore:', error);
-                return usedNamesToday;
-            }
-        }
 
         // Initialize Firebase and load data
         window.initializeChessApp = async function() {
             try {
                 console.log('Initializing Chess Puzzles Hub with Firebase...');
                 
-                await loadUserNamesFromFirestore();
-                
+                window.firebaseAuth.onAuthStateChanged(window.auth, user => {
+                    if (user) {
+                        currentUser = user;
+                        document.getElementById('currentUser').textContent = user.displayName || user.email;
+                        document.getElementById('userInfo').classList.remove('hidden');
+                        document.getElementById('authModal').classList.add('hidden');
+                        showSection('puzzles');
+                    } else {
+                        currentUser = null;
+                        document.getElementById('userInfo').classList.add('hidden');
+                        document.getElementById('authModal').classList.remove('hidden');
+                    }
+                });
+
                 const puzzlesCollection = window.firestore.collection(window.db, 'puzzles');
                 const puzzlesQuery = window.firestore.query(puzzlesCollection, window.firestore.orderBy('createdAt', 'desc'));
                 
@@ -542,7 +548,7 @@
                     snapshot.forEach((doc) => {
                         const data = doc.data();
                         const createdAt = data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.createdAt);
-                        const board = deserializeBoard(data.board); // FIX: Deserialize the board string here
+                        const board = deserializeBoard(data.board);
                         newPuzzles.push({ id: doc.id, ...data, board, createdAt });
                     });
                     
@@ -586,7 +592,6 @@
                 
                 isFirebaseReady = true;
                 document.getElementById('loadingOverlay').classList.add('hidden');
-                document.getElementById('loginModal').classList.remove('hidden');
                 console.log('Chess Puzzles Hub initialized successfully with real-time updates!');
                 
             } catch (error) {
@@ -598,7 +603,6 @@
                 results = JSON.parse(localStorage.getItem('chessResults') || '{}');
                 solutions = JSON.parse(localStorage.getItem('chessSolutions') || '{}');
                 isFirebaseReady = false;
-                document.getElementById('loginModal').classList.remove('hidden');
             }
         };
 
@@ -641,43 +645,63 @@
             ['P', 'P', 'P', 'P', 'P', 'P', 'P', 'P'],
             ['R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R']
         ];
-
-        function isNameUsedToday(name) {
-            const today = new Date().toDateString();
-            return usedNamesToday[today] && usedNamesToday[today].includes(name);
+        
+        window.toggleAuthForm = function() {
+            document.getElementById('loginForm').classList.toggle('hidden');
+            document.getElementById('registerForm').classList.toggle('hidden');
+            document.getElementById('loginError').classList.add('hidden');
+            document.getElementById('registerError').classList.add('hidden');
         }
 
-        async function addNameToToday(name) {
-            const today = new Date().toDateString();
-            if (!usedNamesToday[today]) {
-                usedNamesToday[today] = [];
-            }
-            usedNamesToday[today].push(name);
-            
-            localStorage.setItem('usedNamesToday', JSON.stringify(usedNamesToday));
-            if (isFirebaseReady) {
-                await saveUserNamesToFirestore();
-            }
-        }
+        window.registerUser = async function() {
+            const username = document.getElementById('registerUsername').value.trim();
+            const email = document.getElementById('registerEmail').value.trim();
+            const password = document.getElementById('registerPassword').value.trim();
+            const errorDiv = document.getElementById('registerError');
 
-        async function enterSite() {
-            const name = document.getElementById('userName').value.trim();
-            if (!name) {
-                alert('Please enter your name');
-                return;
-            }
-            
-            if (isNameUsedToday(name)) {
-                document.getElementById('nameError').classList.remove('hidden');
+            if (!username || !email || !password) {
+                errorDiv.textContent = "Please fill in all fields.";
+                errorDiv.classList.remove('hidden');
                 return;
             }
 
-            currentUserName = name;
-            await addNameToToday(name);
-            document.getElementById('currentUser').textContent = name;
-            document.getElementById('loginModal').classList.add('hidden');
-            document.getElementById('nameError').classList.add('hidden');
-            showSection('puzzles');
+            try {
+                const userCredential = await window.firebaseAuth.createUserWithEmailAndPassword(window.auth, email, password);
+                await window.firebaseAuth.updateProfile(userCredential.user, { displayName: username });
+                currentUser = window.auth.currentUser;
+                errorDiv.classList.add('hidden');
+            } catch (error) {
+                errorDiv.textContent = error.message;
+                errorDiv.classList.remove('hidden');
+            }
+        }
+
+        window.loginUser = async function() {
+            const email = document.getElementById('loginEmail').value.trim();
+            const password = document.getElementById('loginPassword').value.trim();
+            const errorDiv = document.getElementById('loginError');
+
+            if (!email || !password) {
+                errorDiv.textContent = "Please fill in all fields.";
+                errorDiv.classList.remove('hidden');
+                return;
+            }
+
+            try {
+                await window.firebaseAuth.signInWithEmailAndPassword(window.auth, email, password);
+                errorDiv.classList.add('hidden');
+            } catch (error) {
+                errorDiv.textContent = error.message;
+                errorDiv.classList.remove('hidden');
+            }
+        }
+
+        window.logoutUser = async function() {
+            try {
+                await window.firebaseAuth.signOut(window.auth);
+            } catch (error) {
+                console.error("Error signing out: ", error);
+            }
         }
 
         function showSection(section) {
@@ -856,7 +880,6 @@
             return errors;
         }
         
-        // FIX: saveWithSolution now also handles the board serialization correctly
         function saveWithSolution() {
             const title = document.getElementById('puzzleTitle').value.trim();
             const description = document.getElementById('puzzleDescription').value.trim();
@@ -878,13 +901,12 @@
                 return;
             }
 
-            // FIX: The board is serialized before being put into the data object
             solutionCaptureData.puzzleData = {
                 title: title,
                 description: description,
                 board: serializeBoard(JSON.parse(JSON.stringify(gameBoard))),
                 firstMove: firstMove,
-                createdBy: currentUserName,
+                createdBy: currentUser.displayName,
                 hasSolutions: true
             };
 
@@ -917,9 +939,9 @@
             const puzzleData = {
                 title: title,
                 description: description,
-                board: serializeBoard(JSON.parse(JSON.stringify(gameBoard))), // FIX: Serialize the board
+                board: serializeBoard(JSON.parse(JSON.stringify(gameBoard))),
                 firstMove: firstMove,
-                createdBy: currentUserName,
+                createdBy: currentUser.displayName,
                 hasSolutions: false
             };
 
@@ -960,7 +982,6 @@
         }
 
         function openSolutionCaptureModal() {
-            // FIX: Deserialize the board string back to a 2D array for the UI
             gameBoard = deserializeBoard(solutionCaptureData.puzzleData.board);
             moveHistory = [];
             currentTurn = solutionCaptureData.puzzleData.firstMove || 'white';
@@ -1172,7 +1193,6 @@
                 return;
             }
 
-            // FIX: Ensure the solutions are a flat array of strings
             solutionCaptureData.capturedSolutions.push([...moveHistory]);
             
             if (solutionCaptureData.currentSolution < solutionCaptureData.solutionsNeeded) {
@@ -1188,7 +1208,7 @@
                     description: description,
                     board: serializeBoard(gameBoard),
                     firstMove: solutionCaptureData.puzzleData.firstMove,
-                    createdBy: currentUserName,
+                    createdBy: currentUser.displayName,
                     hasSolutions: true
                 };
 
@@ -1198,10 +1218,8 @@
                 saveButton.disabled = true;
 
                 try {
-                    // FIX: Save puzzle data with the sanitized title as the doc ID
                     await savePuzzleToFirestore(puzzleData, sanitizedTitle);
                     
-                    // FIX: Save solution data with the same sanitized title as the doc ID
                     await saveSolutionToFirestore(sanitizedTitle, solutionCaptureData.capturedSolutions);
                     
                     document.getElementById('puzzleTitle').value = '';
@@ -1222,7 +1240,6 @@
         }
 
         function resetSolutionBoard() {
-            // FIX: Deserialize the board string back to a 2D array for reset
             gameBoard = deserializeBoard(solutionCaptureData.puzzleData.board);
             moveHistory = [];
             currentTurn = solutionCaptureData.puzzleData.firstMove || 'white';
@@ -1266,7 +1283,6 @@
                 const resultDocRef = window.firestore.doc(window.db, 'results', puzzleId);
                 window.firestore.deleteDoc(resultDocRef);
                 
-                // FIX: Delete the solution document as well
                 const solutionDocRef = window.firestore.doc(window.db, 'solutions', puzzleId);
                 window.firestore.deleteDoc(solutionDocRef);
                 
@@ -1277,7 +1293,6 @@
             }
         }
 
-        // FIX: Reworked this function to handle today's puzzle and archives
         function displayPuzzles() {
             const todayPuzzleList = document.getElementById('todayPuzzle');
             const archivedPuzzlesList = document.getElementById('archivedPuzzles');
@@ -1289,7 +1304,6 @@
                 return;
             }
 
-            // Get today's date in a comparable format
             const today = new Date().toISOString().split('T')[0];
             let hasTodayPuzzle = false;
 
@@ -1310,7 +1324,6 @@
             }
         }
         
-        // Helper function to create a puzzle card
         function createPuzzleCard(puzzle) {
             const puzzleCard = document.createElement('div');
             puzzleCard.className = 'bg-white rounded-lg shadow-lg p-6';
@@ -1336,7 +1349,6 @@
             return puzzleCard;
         }
 
-        // FIX: Function to toggle the archive dropdown
         function toggleArchivedPuzzles() {
             const archivedSection = document.getElementById('archivedPuzzles');
             const arrow = document.getElementById('archiveArrow');
@@ -2076,29 +2088,19 @@
                 return true;
             }
             
-            for (let solution of storedSolutions) {
-                if (userMoves.length === solution.length) {
-                    let matches = true;
-                    for (let i = 0; i < userMoves.length; i++) {
-                        if (userMoves[i] !== solution[i]) {
-                            matches = false;
-                            break;
-                        }
-                    }
-                    if (matches) return true;
+            const userMovesStr = userMoves.join(' ');
+            for (const solution of storedSolutions) {
+                if (userMovesStr === solution.join(' ')) {
+                    return true;
                 }
             }
             return false;
         }
 
-        function hasUserSubmittedToday(puzzleId, userName) {
+        function hasUserSubmitted(puzzleId, userId) {
             if (!results[puzzleId]) return false;
             
-            const today = new Date().toDateString();
-            return results[puzzleId].some(result => 
-                result.playerName === userName && 
-                new Date(result.submittedAt).toDateString() === today
-            );
+            return results[puzzleId].some(result => result.userId === userId);
         }
 
         async function submitSolution() {
@@ -2107,8 +2109,8 @@
                 return;
             }
 
-            if (hasUserSubmittedToday(currentPuzzleId, currentUserName)) {
-                alert('You have already submitted a solution for this puzzle today. Each user can submit only once per day.');
+            if (hasUserSubmitted(currentPuzzleId, currentUser.uid)) {
+                alert('You have already submitted a solution for this puzzle.');
                 return;
             }
 
@@ -2119,10 +2121,11 @@
             stopPuzzleTimer();
 
             const storedSolutions = solutions[currentPuzzleId] || [];
-            const isCorrect = checkSolutionMatch(moveHistory, storedSolutions);
+            const isCorrect = puzzle.hasSolutions ? checkSolutionMatch(moveHistory, storedSolutions) : true;
 
             const solution = {
-                playerName: currentUserName,
+                userId: currentUser.uid,
+                playerName: currentUser.displayName,
                 moves: [...moveHistory],
                 submittedAt: new Date().toISOString(),
                 moveCount: moveHistory.length,
@@ -2137,19 +2140,10 @@
 
             try {
                 await saveResultToFirestore(currentPuzzleId, solution);
-
-                let message = '';
-                if (puzzle.hasSolutions && !isCorrect) {
-                    message = 'Your solution has been recorded but does not match the expected solution. It will appear in the results section without ranking.';
-                }
-
+                
                 closeSolveModal();
                 
                 showSubmissionResultsModal(currentPuzzleId, solution);
-
-                if (message) {
-                    setTimeout(() => alert(message), 200);
-                }
 
             } catch (error) {
             } finally {
@@ -2174,7 +2168,7 @@
             if (lastSubmission.isCorrect) {
                 userResultClass = 'text-green-500';
                 userResultText = '✓ Correct';
-                const rankIndex = correctSubmissions.findIndex(sub => sub.playerName === lastSubmission.playerName);
+                const rankIndex = correctSubmissions.findIndex(sub => sub.userId === lastSubmission.userId);
                 if (rankIndex !== -1) {
                     userRank = rankIndex + 1;
                 }
@@ -2305,12 +2299,6 @@
                     verifyPassword();
                 }
             });
-            
-            document.getElementById('userName').addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') {
-                    enterSite();
-                }
-            });
         });
 
         function formatTime(seconds) {
@@ -2377,8 +2365,8 @@
                 content.id = `results-${puzzleId}`;
                 content.className = 'hidden border-t border-gray-200 p-6 space-y-3';
                 
-                const correctSolutions = puzzleResults.filter(r => r.isCorrect !== false);
-                const incorrectSolutions = puzzleResults.filter(r => r.isCorrect === false);
+                const correctSolutions = puzzleResults.filter(r => r.isCorrect).sort((a, b) => a.timeSpent - b.timeSpent);
+                const incorrectSolutions = puzzleResults.filter(r => !r.isCorrect);
                 
                 let contentHtml = '';
                 
