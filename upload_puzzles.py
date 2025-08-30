@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Uploads one chess puzzle to Firestore daily, cycling through different themes.
+Uploads one chess puzzle to Firestore.
 
-- Fetches puzzles from Lichess based on a sequence of themes (e.g., mate in 1, mate in 2).
-- Uses a rotating list of grandmaster names for the puzzle titles.
-- Ensures puzzle solutions are no longer than 3 full moves.
-- Converts UCI solution to SAN using python-chess.
-- Generates a meaningful description based on the puzzle theme.
-- Stores a flat (non-nested) array of SAN moves.
-- Works with base64-encoded Firebase credentials for use in GitHub Actions.
+- Uses Lichess Daily puzzle JSON (stable & public).
+- Converts UCI solution to SAN with python-chess.
+- Builds a meaningful title & description from PGN headers.
+- Stores a flat (non-nested) array of SAN moves to avoid
+  Firestore's "nested arrays not supported" error.
+- Works with base64-encoded Firebase credentials in the
+  FIREBASE_CREDENTIALS secret (GitHub Actions).
 """
 
 import base64
@@ -17,7 +17,6 @@ import json
 import os
 import re
 from datetime import datetime, timedelta, timezone
-import time
 
 import requests
 import chess
@@ -25,6 +24,7 @@ import chess.pgn
 
 import firebase_admin
 from firebase_admin import credentials, firestore
+
 
 # List of grandmasters for puzzle titles
 GRANDMASTERS = [
@@ -34,86 +34,76 @@ GRANDMASTERS = [
     "Ding Liren", "Ian Nepomniachtchi", "Alireza Firouzja", "Levon Aronian"
 ]
 
-# Sequence of puzzle themes to cycle through
-PUZZLE_THEMES = [
-    "mateIn1",
-    "mateIn2",
-"advantage",
-    "mateIn3",
-]
-
-# Maximum number of retries to find a suitable puzzle
-MAX_FETCH_ATTEMPTS = 10
 
 # ---------- Firebase init (from base64 secret) ----------
 def init_firebase_from_b64_env(env_key: str = "FIREBASE_CREDENTIALS") -> firestore.Client:
     """Initializes Firebase from a base64-encoded service account key."""
-    if os.path.exists("firebase_credentials.json"):
-        cred = credentials.Certificate("firebase_credentials.json")
-    else:
-        b64 = os.getenv(env_key)
-        if not b64:
-            raise RuntimeError(f"{env_key} is not set")
+    b64 = os.getenv(env_key)
+    if not b64:
+        raise RuntimeError(f"{env_key} is not set")
 
-        path = "firebase_credentials.json"
-        with open(path, "wb") as f:
-            f.write(base64.b64decode(b64))
-        cred = credentials.Certificate(path)
+    path = "firebase_credentials.json"
+    with open(path, "wb") as f:
+        f.write(base64.b64decode(b64))
 
-    if not firebase_admin._apps:
-        app = firebase_admin.initialize_app(cred)
-    else:
-        app = firebase_admin.get_app()
+    cred = credentials.Certificate(path)
+    app = firebase_admin.initialize_app(cred)
     return firestore.client(app)
 
 
-# ---------- Puzzle Fetch & Transform ----------
-def get_next_puzzle_theme(db: firestore.Client) -> str:
-    """Gets the next puzzle theme from the sequence by tracking the index in Firestore."""
-    metadata_doc_ref = db.collection("metadata").document("puzzle_themes")
-    doc = metadata_doc_ref.get()
+# ---------- Puzzle fetch & transform ----------
+def fetch_lichess_daily() -> dict:
+    """Fetches the daily puzzle from the Lichess API."""
+    url = "https://lichess.org/api/puzzle/daily"
+    r = requests.get(url, timeout=20)
+    r.raise_for_status()
+    return r.json()
 
-    last_index = -1
-    if doc.exists:
-        data = doc.to_dict()
-        last_index = data.get("last_theme_index", -1)
 
-    new_index = (last_index + 1) % len(PUZZLE_THEMES)
-    theme = PUZZLE_THEMES[new_index]
+def pgn_headers(pgn_text: str) -> dict:
+    """Parses PGN text to extract game headers."""
+    game = chess.pgn.read_game(io.StringIO(pgn_text))
+    if game is None:
+        return {}
+    return {k: v for k, v in game.headers.items()}
 
-    metadata_doc_ref.set({"last_theme_index": new_index}, merge=True)
 
-    print(f"Selected puzzle theme for today: {theme}")
-    return theme
+def board_at_initial_fen(pgn_text: str, initial_ply: int) -> chess.Board:
+    """Returns the board position just before the puzzle's first solution move."""
+    game = chess.pgn.read_game(io.StringIO(pgn_text))
+    if game is None:
+        return chess.Board()
 
-def fetch_puzzle_by_theme(theme: str) -> dict | None:
-    """Fetches a random puzzle from Lichess API based on a given theme."""
-    url = f"https://lichess.org/api/puzzle/theme?theme={theme}&count=1"
-    try:
-        r = requests.get(url, timeout=30)
-        r.raise_for_status()
-        return r.json()
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching puzzle from Lichess API: {e}")
-        return None
+    board = game.board()
+    target = max(0, int(initial_ply) - 1)
+    for i, mv in enumerate(game.mainline_moves()):
+        if i >= target:
+            break
+        board.push(mv)
+    return board
+
 
 def uci_to_san_list(board: chess.Board, uci_moves: list[str]) -> list[str]:
     """Converts a list of UCI strings into a flat list of SAN strings."""
     san = []
     b = board.copy()
     for u in uci_moves:
-        try:
-            mv = chess.Move.from_uci(u)
-            if b.is_legal(mv):
+        mv = chess.Move.from_uci(u)
+        if b.is_legal(mv):
+            san.append(b.san(mv))
+            b.push(mv)
+        elif b.is_pseudo_legal(mv):
+            try:
                 san.append(b.san(mv))
                 b.push(mv)
-            else:
-                print(f"Skipping illegal move: {u}")
-                break
-        except Exception as e:
-            print(f"Error processing UCI move {u}: {e}")
+            except Exception as e:
+                print(f"Skipping pseudo-legal move: {e}")
+                pass
+        else:
+            print(f"Skipping illegal move: {u}")
             break
     return san
+
 
 def generate_puzzle_title(db: firestore.Client) -> str:
     """
@@ -135,28 +125,38 @@ def generate_puzzle_title(db: firestore.Client) -> str:
     
     return title
 
-def generate_puzzle_description(theme: str, san_moves: list[str]) -> str:
-    """Generates a description based on the puzzle theme and solution."""
-    if "mateIn" in theme:
-        mate_in_num = int(theme.replace("mateIn", ""))
-        return f"Find the forced checkmate in {mate_in_num} moves."
-    elif theme == "advantage":
-        return "Find the best sequence of moves to gain a decisive advantage."
-    else:
+def generate_puzzle_description(san_moves: list[str]) -> str:
+    """
+    Generates a descriptive puzzle text based on the solution moves.
+    """
+    if not san_moves:
         return "Find the best move to solve the puzzle."
+
+    num_moves = len(san_moves)
+    last_move = san_moves[-1]
+    if last_move.endswith('#'):
+        return f"Find the forced mate in {num_moves} moves."
+    else:
+        return f"Find the best move to gain a decisive advantage in {num_moves} moves."
+
 
 def serialize_board_to_string(board: chess.Board) -> str:
     """Converts a python-chess board object to a 64-character string representation."""
     board_str = board.board_fen().replace('/', '')
-    for i in range(8, 0, -1):
-        board_str = board_str.replace(str(i), ' ' * i)
+    board_str = board_str.replace('1', ' ')
+    board_str = board_str.replace('2', '  ')
+    board_str = board_str.replace('3', '   ')
+    board_str = board_str.replace('4', '    ')
+    board_str = board_str.replace('5', '     ')
+    board_str = board_str.replace('6', '      ')
+    board_str = board_str.replace('7', '       ')
+    board_str = board_str.replace('8', '        ')
     return board_str
 
 def sanitize_title_for_doc_id(title: str) -> str:
     """Converts a string to a valid Firestore document ID."""
     sanitized = title.lower().replace(" ", "-")
     sanitized = re.sub(r'[^a-z0-9-]', '', sanitized)
-    sanitized = f"{sanitized}-{int(time.time())}"
     return sanitized
 
 def delete_old_puzzles(db: firestore.Client):
@@ -166,99 +166,93 @@ def delete_old_puzzles(db: firestore.Client):
     puzzles_collection = db.collection("puzzles")
     old_puzzles_query = puzzles_collection.where("createdAt", "<", one_month_ago)
     
+    # Get all old puzzles
     old_puzzles = old_puzzles_query.stream()
     
     deleted_count = 0
     for puzzle_doc in old_puzzles:
         puzzle_id = puzzle_doc.id
+        
+        # Delete puzzle document
         puzzle_doc.reference.delete()
         
+        # Delete corresponding solution document
         solution_doc_ref = db.collection("solutions").document(puzzle_id)
         solution_doc_ref.delete()
 
+        # Delete corresponding results document
         results_doc_ref = db.collection("results").document(puzzle_id)
         results_doc_ref.delete()
         
         deleted_count += 1
         print(f"🗑️ Deleted old puzzle with ID: {puzzle_id}")
     
-    if deleted_count > 0:
-        print(f"✅ Finished deleting {deleted_count} old puzzles.")
-    else:
-        print("No old puzzles to delete.")
+    print(f"✅ Finished deleting {deleted_count} old puzzles.")
+
 
 # ---------- Main ----------
 def main():
+    # 1) Firebase
     db = init_firebase_from_b64_env()
+
+    # 2) Delete old puzzles first
     delete_old_puzzles(db)
-    theme = get_next_puzzle_theme(db)
 
-    puzzle_data = None
-    for attempt in range(MAX_FETCH_ATTEMPTS):
-        print(f"Attempt {attempt + 1}/{MAX_FETCH_ATTEMPTS}: Fetching puzzle with theme '{theme}'...")
-        data = fetch_puzzle_by_theme(theme)
-        if data:
-            solution_uci = data["puzzle"]["solution"]
-            if len(solution_uci) <= 6:
-                puzzle_data = data
-                print(f"Found suitable puzzle #{data['puzzle']['id']} with {len(solution_uci)} solution moves.")
-                break
-            else:
-                print(f"ℹ️ Skipping Lichess puzzle #{data['puzzle']['id']}: Solution has {len(solution_uci)} moves, which is more than the allowed 6.")
-        time.sleep(2)
+    # 3) Fetch daily puzzle
+    data = fetch_lichess_daily()
 
-    if not puzzle_data:
-        print("❌ Could not find a suitable puzzle after multiple attempts. Exiting.")
+    pid = data["puzzle"]["id"]
+    initial_ply = int(data["puzzle"]["initialPly"])
+    pgn = data["game"]["pgn"]
+    solution_uci = data["puzzle"]["solution"]
+
+    # 4) Build board at puzzle start & derive SAN moves
+    start_board = board_at_initial_fen(pgn, initial_ply)
+    san_moves = uci_to_san_list(start_board, solution_uci)
+    
+    if len(san_moves) > 3:
+        print(f"ℹ️ Skipping Lichess Daily #{pid}: Solution has {len(san_moves)} moves, which is more than the allowed 3.")
         return
 
-    pid = puzzle_data["puzzle"]["id"]
-    pgn_text = puzzle_data["game"]["pgn"]
-    solution_uci = puzzle_data["puzzle"]["solution"]
+    serialized_board = serialize_board_to_string(start_board)
+    side = "w" if start_board.turn else "b"
 
-    game = chess.pgn.read_game(io.StringIO(pgn_text))
-    board = game.board()
-    for move in game.mainline_moves():
-        board.push(move)
-    
-    board.pop() 
-    
-    san_moves = uci_to_san_list(board.copy(), solution_uci)
-
-    serialized_board = serialize_board_to_string(board)
-    side_to_move = "white" if board.turn == chess.WHITE else "black"
-
+    # 5) Generate title and description
     title = generate_puzzle_title(db)
-    description = generate_puzzle_description(theme, san_moves)
+    description = generate_puzzle_description(san_moves)
+
+    # 6) Sanitize the title for document ID
     doc_id = sanitize_title_for_doc_id(title)
 
+    # 7) Firestore document (for puzzles collection)
     puzzle_doc = {
         "puzzleId": pid,
         "title": title,
         "description": description,
         "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
         "createdAt": firestore.SERVER_TIMESTAMP,
-        "createdBy": "Lichess",
+        "createdBy": "lichess",
         "hasSolutions": True,
-        "firstMove": side_to_move,
+        "firstMove": side,
         "board": serialized_board
     }
 
+    # 8) Firestore document (for solutions collection)
     solution_doc = {
-        "solutions": [san_moves],
+        "solutions": san_moves,
         "lastUpdated": firestore.SERVER_TIMESTAMP,
         "puzzleId": pid
     }
 
-    try:
-        puzzle_doc_ref = db.collection("puzzles").document(doc_id)
-        puzzle_doc_ref.set(puzzle_doc)
-        
-        solution_doc_ref = db.collection("solutions").document(doc_id)
-        solution_doc_ref.set(solution_doc)
+    # 9) Store documents with the new document ID
+    puzzle_doc_ref = db.collection("puzzles").document(doc_id)
+    puzzle_doc_ref.set(puzzle_doc)
+    
+    solution_doc_ref = db.collection("solutions").document(doc_id)
+    solution_doc_ref.set(solution_doc)
 
-        print(f"✅ Successfully uploaded puzzle #{pid} with title: '{title}' and doc_id: '{doc_id}'")
-    except Exception as e:
-        print(f"❌ Error uploading puzzle to Firestore: {e}")
+    print(f"✅ Uploaded Lichess Daily #{pid} with {len(san_moves)} solution moves. Title: {title}")
+
 
 if __name__ == "__main__":
     main()
