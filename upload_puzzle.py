@@ -31,7 +31,7 @@ GRANDMASTERS = [
     "Magnus Carlsen", "Garry Kasparov", "Bobby Fischer", "Anatoly Karpov",
     "Mikhail Tal", "Jose Raul Capablanca", "Paul Morphy", "Emanuel Lasker",
     "Viswanathan Anand", "Hikaru Nakamura", "Fabiano Caruana", "Wesley So",
-    "Ding Liren", "Ian Nepomniamchchi", "Alireza Firouzja", "Levon Aronian"
+    "Ding Liren", "Ian Nepomniachtchi", "Alireza Firouzja", "Levon Aronian"
 ]
 
 
@@ -46,9 +46,12 @@ def init_firebase_from_b64_env(env_key: str = "FIREBASE_CREDENTIALS") -> firesto
     with open(path, "wb") as f:
         f.write(base64.b64decode(b64))
 
-    cred = credentials.Certificate(path)
-    app = firebase_admin.initialize_app(cred)
-    return firestore.client(app)
+    # Initialize the app if it hasn't been initialized yet
+    if not firebase_admin._apps:
+        cred = credentials.Certificate(path)
+        firebase_admin.initialize_app(cred)
+        
+    return firestore.client()
 
 
 # ---------- Puzzle fetch & transform ----------
@@ -75,12 +78,15 @@ def board_at_initial_fen(pgn_text: str, initial_ply: int) -> chess.Board:
         return chess.Board()
 
     board = game.board()
+    # We need to go back one move from the start of the puzzle to get the correct position
     target = max(0, int(initial_ply) - 1)
-    for i, mv in enumerate(game.mainline_moves()):
-        if i >= target:
-            break
-        board.push(mv)
-    return board
+    
+    # Iterate through moves to set up the board state
+    node = game
+    for _ in range(target):
+        node = node.next()
+    
+    return node.board()
 
 
 def uci_to_san_list(board: chess.Board, uci_moves: list[str]) -> list[str]:
@@ -92,13 +98,6 @@ def uci_to_san_list(board: chess.Board, uci_moves: list[str]) -> list[str]:
         if b.is_legal(mv):
             san.append(b.san(mv))
             b.push(mv)
-        elif b.is_pseudo_legal(mv):
-            try:
-                san.append(b.san(mv))
-                b.push(mv)
-            except Exception as e:
-                print(f"Skipping pseudo-legal move: {e}")
-                pass
         else:
             print(f"Skipping illegal move: {u}")
             break
@@ -132,25 +131,19 @@ def generate_puzzle_description(san_moves: list[str]) -> str:
     if not san_moves:
         return "Find the best move to solve the puzzle."
 
-    num_moves = len(san_moves)
+    num_moves = (len(san_moves) + 1) // 2
     last_move = san_moves[-1]
     if last_move.endswith('#'):
         return f"Find the forced mate in {num_moves} moves."
     else:
-        return f"Find the best move to gain a decisive advantage in {num_moves} moves."
+        return f"Find the best move to gain a decisive advantage."
 
 
 def serialize_board_to_string(board: chess.Board) -> str:
     """Converts a python-chess board object to a 64-character string representation."""
     board_str = board.board_fen().replace('/', '')
-    board_str = board_str.replace('1', ' ')
-    board_str = board_str.replace('2', '  ')
-    board_str = board_str.replace('3', '   ')
-    board_str = board_str.replace('4', '    ')
-    board_str = board_str.replace('5', '     ')
-    board_str = board_str.replace('6', '      ')
-    board_str = board_str.replace('7', '       ')
-    board_str = board_str.replace('8', '        ')
+    for i in range(8, 0, -1):
+        board_str = board_str.replace(str(i), ' ' * i)
     return board_str
 
 def sanitize_title_for_doc_id(title: str) -> str:
@@ -166,24 +159,14 @@ def delete_old_puzzles(db: firestore.Client):
     puzzles_collection = db.collection("puzzles")
     old_puzzles_query = puzzles_collection.where("createdAt", "<", one_month_ago)
     
-    # Get all old puzzles
     old_puzzles = old_puzzles_query.stream()
     
     deleted_count = 0
     for puzzle_doc in old_puzzles:
         puzzle_id = puzzle_doc.id
-        
-        # Delete puzzle document
         puzzle_doc.reference.delete()
-        
-        # Delete corresponding solution document
-        solution_doc_ref = db.collection("solutions").document(puzzle_id)
-        solution_doc_ref.delete()
-
-        # Delete corresponding results document
-        results_doc_ref = db.collection("results").document(puzzle_id)
-        results_doc_ref.delete()
-        
+        db.collection("solutions").document(puzzle_id).delete()
+        db.collection("results").document(puzzle_id).delete()
         deleted_count += 1
         print(f"🗑️ Deleted old puzzle with ID: {puzzle_id}")
     
@@ -192,13 +175,9 @@ def delete_old_puzzles(db: firestore.Client):
 
 # ---------- Main ----------
 def main():
-    # 1) Firebase
     db = init_firebase_from_b64_env()
-
-    # 2) Delete old puzzles first
     delete_old_puzzles(db)
 
-    # 3) Fetch daily puzzle
     data = fetch_lichess_daily()
 
     pid = data["puzzle"]["id"]
@@ -206,25 +185,21 @@ def main():
     pgn = data["game"]["pgn"]
     solution_uci = data["puzzle"]["solution"]
 
-    # 4) Build board at puzzle start & derive SAN moves
     start_board = board_at_initial_fen(pgn, initial_ply)
     san_moves = uci_to_san_list(start_board, solution_uci)
     
-    if len(san_moves) > 3:
-        print(f"ℹ️ Skipping Lichess Daily #{pid}: Solution has {len(san_moves)} moves, which is more than the allowed 3.")
+    # We only want short puzzles
+    if len(san_moves) > 6:
+        print(f"ℹ️ Skipping Lichess Daily #{pid}: Solution has {len(san_moves)} moves, which is more than the allowed 6.")
         return
 
     serialized_board = serialize_board_to_string(start_board)
-    side = "w" if start_board.turn else "b"
+    side = "white" if start_board.turn == chess.WHITE else "black"
 
-    # 5) Generate title and description
     title = generate_puzzle_title(db)
     description = generate_puzzle_description(san_moves)
-
-    # 6) Sanitize the title for document ID
     doc_id = sanitize_title_for_doc_id(title)
 
-    # 7) Firestore document (for puzzles collection)
     puzzle_doc = {
         "puzzleId": pid,
         "title": title,
@@ -237,14 +212,18 @@ def main():
         "board": serialized_board
     }
 
-    # 8) Firestore document (for solutions collection)
+    #
+    # --- THIS IS THE CORRECTED PART ---
+    # The 'solutions' field now correctly wraps the 'san_moves' list in another list
+    # to match the data structure your web application expects.
+    #
     solution_doc = {
-        "solutions": san_moves,
+        "solutions": [san_moves],
         "lastUpdated": firestore.SERVER_TIMESTAMP,
         "puzzleId": pid
     }
 
-    # 9) Store documents with the new document ID
+    # Store both documents
     puzzle_doc_ref = db.collection("puzzles").document(doc_id)
     puzzle_doc_ref.set(puzzle_doc)
     
