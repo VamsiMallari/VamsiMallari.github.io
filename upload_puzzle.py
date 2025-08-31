@@ -1,21 +1,14 @@
 import os
-import json
 import requests
 import datetime
 import firebase_admin
 from firebase_admin import credentials, firestore
 import chess
-import chess.pgn
 
 # ==============================
 # 1. Connect to Firestore ☁️
 # ==============================
-cred_json = os.getenv("FIREBASE_CREDENTIALS")
-if not cred_json:
-    raise RuntimeError("FIREBASE_CREDENTIALS not set in GitHub Secrets!")
-
-cred_dict = json.loads(cred_json)
-cred = credentials.Certificate(cred_dict)
+cred = credentials.Certificate("firebase_credentials.json")
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
@@ -24,7 +17,7 @@ SOLUTIONS_COLLECTION = "solutions"
 METADATA_COLLECTION = "metadata"
 
 # ==============================
-# 2. Clean Up Old Puzzles 🗑️
+# 2. Cleanup old puzzles 🗑️
 # ==============================
 def delete_old_puzzles():
     cutoff = datetime.datetime.utcnow() - datetime.timedelta(days=30)
@@ -32,10 +25,9 @@ def delete_old_puzzles():
     old_puzzles = puzzles_ref.where("createdAt", "<", cutoff).stream()
 
     for puzzle in old_puzzles:
-        puzzle_id = puzzle.id
-        puzzles_ref.document(puzzle_id).delete()
-        db.collection(SOLUTIONS_COLLECTION).document(puzzle_id).delete()
-        print(f"Deleted old puzzle {puzzle_id}")
+        puzzles_ref.document(puzzle.id).delete()
+        db.collection(SOLUTIONS_COLLECTION).document(puzzle.id).delete()
+        print(f"Deleted old puzzle {puzzle.id}")
 
 # ==============================
 # 3. Fetch Lichess Daily Puzzle 🧩
@@ -47,7 +39,7 @@ def fetch_daily_puzzle():
     return resp.json()
 
 # ==============================
-# 4. Process and Validate ⚙️
+# 4. Process Puzzle ⚙️
 # ==============================
 def process_puzzle(data):
     puzzle = data["puzzle"]
@@ -58,14 +50,13 @@ def process_puzzle(data):
 
     board = chess.Board(fen)
 
-    # Convert UCI to SAN
+    # Convert UCI -> SAN
     solution_san = []
     for uci in moves:
         move = board.parse_uci(uci)
         solution_san.append(board.san(move))
         board.push(move)
 
-    # Only allow puzzles <= 6 half-moves (3 moves each side)
     if len(solution_san) > 6:
         raise ValueError("Puzzle too long, skipping.")
 
@@ -81,53 +72,56 @@ def process_puzzle(data):
 # 5. Title & Description 📝
 # ==============================
 def generate_title_and_description(san_solution):
-    # Get next GM name in sequence
     metadata_ref = db.collection(METADATA_COLLECTION).document("title_tracker")
     metadata = metadata_ref.get().to_dict() or {"last_index": -1, "names": [
-        "Magnus Carlsen", "Viswanathan Anand", "Garry Kasparov", "Hikaru Nakamura",
-        "Bobby Fischer", "Judith Polgar", "Vladimir Kramnik"
+        "magnus-carlsen", "viswanathan-anand", "garry-kasparov", "hikaru-nakamura",
+        "bobby-fischer", "judith-polgar", "vladimir-kramnik", "ding-liren",
+        "fabiano-caruana", "levon-aronian", "anatoly-karpov"
     ]}
 
     names = metadata["names"]
     last_index = metadata["last_index"]
     next_index = (last_index + 1) % len(names)
-    title = names[next_index]
+    gm_name = names[next_index]
 
     metadata_ref.set({"last_index": next_index, "names": names})
 
-    # Description
     if san_solution[-1].endswith("#"):
         desc = f"Find the forced mate in {len(san_solution)//2} moves."
     else:
-        desc = "Find the best move to gain a decisive advantage."
+        desc = "Find the best move to solve the puzzle."
 
-    return title, desc
+    return gm_name, desc
 
 # ==============================
-# 6. Upload to Firestore 🚀
+# 6. Upload Puzzle 🚀
 # ==============================
 def upload_puzzle(puzzle):
-    title, description = generate_title_and_description(puzzle["san_solution"])
+    gm_name, description = generate_title_and_description(puzzle["san_solution"])
 
+    # Puzzles collection
     doc_data = {
-        "title": title,
+        "title": gm_name.replace("-", " ").title(),
         "description": description,
-        "board": {"fen": puzzle["fen"]},
-        "firstMove": puzzle["san_solution"][0],
+        "board": puzzle["fen"],
+        "firstMove": "white",  # you can refine this if needed
         "createdAt": datetime.datetime.utcnow(),
-        "createdBy": "lichess-daily",
+        "createdBy": "lichess",
         "hasSolutions": True,
+        "puzzleId": puzzle["puzzle_id"],
+        "date": datetime.datetime.utcnow().strftime("%Y-%m-%d"),
     }
 
-    # Store puzzle
-    db.collection(PUZZLES_COLLECTION).document(puzzle["puzzle_id"]).set(doc_data)
+    db.collection(PUZZLES_COLLECTION).document(gm_name).set(doc_data)
 
-    # Store solution
-    db.collection(SOLUTIONS_COLLECTION).document(puzzle["puzzle_id"]).set({
-        "solutions": [puzzle["san_solution"]]
+    # Solutions collection
+    db.collection(SOLUTIONS_COLLECTION).document(gm_name).set({
+        "puzzleId": puzzle["puzzle_id"],
+        "lastUpdated": datetime.datetime.utcnow(),
+        "solutions": puzzle["san_solution"]
     })
 
-    print(f"✅ Uploaded puzzle {puzzle['puzzle_id']}")
+    print(f"✅ Uploaded puzzle {puzzle['puzzle_id']} under {gm_name}")
 
 # ==============================
 # Main
