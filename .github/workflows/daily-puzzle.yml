@@ -27,4 +27,4 @@ jobs:
           echo "${{ secrets.FIREBASE_CREDENTIALS }}" > firebase_credentials.json
 
       - name: Run uploader
-        run: python scripts/upload_puzzle.py
+        run: python upload_puzzle.py
