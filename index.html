@@ -131,9 +131,18 @@
             </h2>
             
             <div id="login-form">
+                <h3 class="text-xl font-semibold text-white mb-4 text-center">Login</h3>
                 <form onsubmit="handleLogin(event)" class="space-y-4">
                     <input type="email" id="login-email" placeholder="Email" required class="w-full form-input">
-                    <input type="password" id="login-password" placeholder="Password" required class="w-full form-input">
+                    <div class="relative">
+                        <input type="password" id="login-password" placeholder="Password" required class="w-full form-input pr-10">
+                        <button type="button" onclick="togglePassword('login-password')" class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white">
+                            👁️
+                        </button>
+                    </div>
+                    <div class="text-right text-sm">
+                        <button type="button" onclick="showResetForm()" class="text-[var(--accent)] hover:underline font-semibold">Forgot Password?</button>
+                    </div>
                     <button type="submit" id="login-btn" class="w-full btn btn-primary flex items-center justify-center gap-2">Login</button>
                 </form>
                 <p class="text-center mt-6 text-sm text-[var(--text-secondary)]">
@@ -141,17 +150,35 @@
                     <button onclick="showRegister()" class="text-[var(--accent)] hover:underline font-semibold">Register</button>
                 </p>
             </div>
-
+    
             <div id="register-form" class="hidden">
+                <h3 class="text-xl font-semibold text-white mb-4 text-center">Register</h3>
                 <form onsubmit="handleRegister(event)" class="space-y-4">
                     <input type="text" id="register-name" placeholder="Full Name" required class="w-full form-input">
                     <input type="email" id="register-email" placeholder="Email" required class="w-full form-input">
-                    <input type="password" id="register-password" placeholder="Password (min 6 characters)" required minlength="6" class="w-full form-input">
-                    <button type="submit" id="register-btn" class="w-full btn btn-primary flex items-center justify-center gap-2" style="background: var(--success);">Register</button>
+                    <div class="relative">
+                         <input type="password" id="register-password" placeholder="Password (min 6 characters)" required minlength="6" class="w-full form-input pr-10">
+                         <button type="button" onclick="togglePassword('register-password')" class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-white">
+                            👁️
+                        </button>
+                    </div>
+                    <button type="submit" id="register-btn" class="w-full btn flex items-center justify-center gap-2" style="background: var(--success);">Register</button>
                 </form>
                 <p class="text-center mt-6 text-sm text-[var(--text-secondary)]">
                     Already have an account? 
                     <button onclick="showLogin()" class="text-[var(--accent)] hover:underline font-semibold">Login</button>
+                </p>
+            </div>
+    
+            <div id="reset-form" class="hidden">
+                <h3 class="text-xl font-semibold text-white mb-4 text-center">Reset Password</h3>
+                <form onsubmit="handlePasswordReset(event)" class="space-y-4">
+                    <input type="email" id="reset-email" placeholder="Enter your email" required class="w-full form-input">
+                    <button type="submit" id="reset-btn" class="w-full btn btn-primary flex items-center justify-center gap-2">Send Reset Link</button>
+                </form>
+                <p class="text-center mt-6 text-sm text-[var(--text-secondary)]">
+                    Remembered your password?
+                    <button onclick="showLogin()" class="text-[var(--accent)] hover:underline font-semibold">Back to Login</button>
                 </p>
             </div>
         </div>
@@ -326,10 +353,29 @@
         const showLogin = () => {
             document.getElementById('login-form').classList.remove('hidden');
             document.getElementById('register-form').classList.add('hidden');
+            document.getElementById('reset-form').classList.add('hidden');
         };
         const showRegister = () => {
             document.getElementById('login-form').classList.add('hidden');
             document.getElementById('register-form').classList.remove('hidden');
+            document.getElementById('reset-form').classList.add('hidden');
+        };
+        const showResetForm = () => {
+            document.getElementById('login-form').classList.add('hidden');
+            document.getElementById('register-form').classList.add('hidden');
+            document.getElementById('reset-form').classList.remove('hidden');
+        };
+
+        const togglePassword = (inputId) => {
+            const input = document.getElementById(inputId);
+            const button = input.nextElementSibling;
+            if (input.type === 'password') {
+                input.type = 'text';
+                button.textContent = '🙈';
+            } else {
+                input.type = 'password';
+                button.textContent = '👁️';
+            }
         };
 
         const handleLogin = async (event) => {
@@ -339,7 +385,7 @@
             const password = document.getElementById('login-password').value;
             try {
                 await auth.signInWithEmailAndPassword(email, password);
-                // Auth state change will handle the rest
+                // onAuthStateChanged will handle successful login
             } catch (error) {
                 showToast(error.message, 'error');
             } finally {
@@ -360,11 +406,26 @@
                     createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                     solvedPuzzles: [],
                 });
-                // Auth state change will handle the rest
+                // onAuthStateChanged will handle successful registration
             } catch (error) {
                 showToast(error.message, 'error');
             } finally {
                 setLoadingState('register-btn', false);
+            }
+        };
+        
+        const handlePasswordReset = async (event) => {
+            event.preventDefault();
+            setLoadingState('reset-btn', true);
+            const email = document.getElementById('reset-email').value;
+            try {
+                await auth.sendPasswordResetEmail(email);
+                showToast('Password reset link sent to your email!', 'success');
+                showLogin(); // Switch back to login form after sending
+            } catch (error) {
+                showToast(error.message, 'error');
+            } finally {
+                setLoadingState('reset-btn', false);
             }
         };
 
@@ -385,6 +446,7 @@
                 currentUser = null;
                 document.getElementById('auth-modal').classList.remove('hidden');
                 document.getElementById('main-app').classList.add('hidden');
+                showLogin(); // Default to login view when logged out
             }
         });
 
@@ -516,6 +578,7 @@
         };
         
         const updateTimer = () => {
+            if (!startTime) return;
             const elapsed = Math.floor((Date.now() - startTime) / 1000);
             const minutes = Math.floor(elapsed / 60).toString().padStart(2, '0');
             const seconds = (elapsed % 60).toString().padStart(2, '0');
@@ -524,24 +587,27 @@
 
         const handleSquareClick = (rank, file) => {
             if (!canMove || gameState !== 'playing') return;
-            // Simplified move logic for demonstration. A full implementation requires a chess.js library.
-            // This is a placeholder for your detailed move validation logic.
+            // This is a simplified move logic. For full rules, a library like chess.js is recommended.
             const piece = currentBoard[rank][file];
+            const clickedSquareEl = document.querySelector(`#chess-board > div:nth-child(${rank * 8 + file + 1})`);
+
             if (selectedSquare) {
-                // Move piece
-                const fromRank = selectedSquare.dataset.rank;
-                const fromFile = selectedSquare.dataset.file;
+                const fromRank = parseInt(selectedSquare.dataset.rank, 10);
+                const fromFile = parseInt(selectedSquare.dataset.file, 10);
+                
+                // Simplified move execution
                 currentBoard[rank][file] = currentBoard[fromRank][fromFile];
                 currentBoard[fromRank][fromFile] = '';
                 
                 // Update UI
-                const fromSquareEl = document.querySelector(`#chess-board .chess-square:nth-child(${fromRank * 8 + fromFile + 1})`);
-                const toSquareEl = document.querySelector(`#chess-board .chess-square:nth-child(${rank * 8 + file + 1})`);
-                toSquareEl.textContent = fromSquareEl.textContent;
-                fromSquareEl.textContent = '';
+                clickedSquareEl.textContent = selectedSquare.textContent;
+                selectedSquare.textContent = '';
                 
-                // Record move
-                const move = `${String.fromCharCode(97 + fromFile)}${8 - fromRank}-${String.fromCharCode(97 + file)}${8 - rank}`;
+                // Record move (simple notation)
+                const move = `${String.fromCharCode(97 + fromFile)}${8 - fromRank} -> ${String.fromCharCode(97 + file)}${8 - rank}`;
+                if (moveHistory.length === 0 || document.getElementById('move-history').textContent.includes('...')) {
+                    moveHistory = []; // Clear placeholder text
+                }
                 moveHistory.push(move);
                 updateMoveHistory();
                 
@@ -549,7 +615,7 @@
                 selectedSquare = null;
             } else if (piece) {
                 // Select piece
-                selectedSquare = document.querySelector(`#chess-board .chess-square:nth-child(${rank * 8 + file + 1})`);
+                selectedSquare = clickedSquareEl;
                 selectedSquare.dataset.rank = rank;
                 selectedSquare.dataset.file = file;
                 selectedSquare.classList.add('selected');
@@ -558,7 +624,7 @@
         
         const updateMoveHistory = () => {
             const historyDiv = document.getElementById('move-history');
-            historyDiv.textContent = moveHistory.join(' ');
+            historyDiv.textContent = moveHistory.join(', ');
         };
 
         const submitSolution = async () => {
@@ -567,9 +633,9 @@
             const solveTime = Math.floor((Date.now() - startTime) / 1000);
             canMove = false;
             
-            // NOTE: A real implementation would compare `moveHistory` with `currentPuzzle.solution`.
-            // For this demo, we'll assume the solution is correct.
-            const isCorrect = true; // Placeholder for actual validation
+            // NOTE: A real implementation would deeply compare `moveHistory` with `currentPuzzle.solution`.
+            // For this demo, we'll assume any move submitted is correct to demonstrate the flow.
+            const isCorrect = moveHistory.length > 0;
 
             if(isCorrect) {
                 const rank = calculateRank(solveTime);
@@ -582,7 +648,9 @@
                 loadPuzzles(); // Refresh dashboard
             } else {
                  showToast('Incorrect solution. Try again!', 'error');
-                 // re-enable board
+                 canMove = true; // Re-enable board
+                 startTime = Date.now() - (solveTime * 1000); // Resume timer
+                 timerInterval = setInterval(updateTimer, 1000);
             }
         };
         
