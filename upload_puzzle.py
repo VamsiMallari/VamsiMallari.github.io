@@ -1,4 +1,6 @@
 import os
+import json
+import base64
 import requests
 import datetime
 import firebase_admin
@@ -8,7 +10,16 @@ import chess
 # ==============================
 # 1. Connect to Firestore ☁️
 # ==============================
-cred = credentials.Certificate("firebase_credentials.json")
+# Read base64 from file
+with open("firebase_credentials.json", "r") as f:
+    b64_data = f.read().strip()
+
+# Decode base64 → JSON
+cred_json = base64.b64decode(b64_data).decode("utf-8")
+cred_dict = json.loads(cred_json)
+
+# Initialize Firebase
+cred = credentials.Certificate(cred_dict)
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
@@ -104,7 +115,7 @@ def upload_puzzle(puzzle):
         "title": gm_name.replace("-", " ").title(),
         "description": description,
         "board": puzzle["fen"],
-        "firstMove": "white",  # you can refine this if needed
+        "firstMove": puzzle["san_solution"][0],  # ✅ actual first move
         "createdAt": datetime.datetime.utcnow(),
         "createdBy": "lichess",
         "hasSolutions": True,
