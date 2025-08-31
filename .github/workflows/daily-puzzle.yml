@@ -25,4 +25,4 @@ jobs:
       - name: Run uploader script
         env:
           FIREBASE_CREDENTIALS: ${{ secrets.FIREBASE_CREDENTIALS }}
-        run: python scripts/upload_puzzle.py
+        run: python scripts/upload_puzzles.py
