@@ -8,6 +8,8 @@ on:
 jobs:
   upload:
     runs-on: ubuntu-latest
+    env:
+      FIREBASE_CREDENTIALS: ${{ secrets.FIREBASE_CREDENTIALS }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -20,11 +22,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install firebase-admin requests python-chess
-
-      - name: Write Firebase credentials
-        run: |
-          echo "${{ secrets.FIREBASE_CREDENTIALS }}" > firebase_credentials.json
+          pip install firebase-admin requests python-chess stockfish
 
       - name: Run uploader
         run: python upload_puzzle.py
