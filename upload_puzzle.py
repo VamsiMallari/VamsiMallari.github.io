@@ -1,18 +1,19 @@
 import os
+import base64
 import json
 import random
 import firebase_admin
 from firebase_admin import credentials, firestore
 import chess
-import chess.engine
 from stockfish import Stockfish
 
-STOCKFISH_PATH = "/usr/games/stockfish"  # Update if needed (GitHub Actions runner has stockfish installed here)
+STOCKFISH_PATH = "/usr/games/stockfish"  # Default path in GitHub Actions runner; change if needed.
 
 def get_firestore_client():
-    service_account_info = os.environ.get('FIREBASE_CREDENTIALS')
-    if not service_account_info:
+    b64_creds = os.environ.get('FIREBASE_CREDENTIALS')
+    if not b64_creds:
         raise RuntimeError("FIREBASE_CREDENTIALS environment variable is missing")
+    service_account_info = base64.b64decode(b64_creds).decode("utf-8")
     service_account_dict = json.loads(service_account_info)
     cred = credentials.Certificate(service_account_dict)
     firebase_admin.initialize_app(cred)
@@ -32,48 +33,36 @@ def get_grandmaster_names(db):
         print(f"Error fetching grandmaster names: {e}")
     return gm_names
 
-def generate_mate_in_n_puzzle(stockfish, n):
-    """
-    Randomly generates positions until a mate in n puzzle is found.
-    Returns FEN and solution moves.
-    """
+def find_mate_in_n(stockfish, n):
+    # Try random positions until a mate in n is found
     tries = 0
     while tries < 1000:
         board = chess.Board()
-        # Make random moves for both sides
-        for _ in range(random.randint(6, 20)):
-            legal_moves = list(board.legal_moves)
-            if not legal_moves or board.is_game_over():
+        for _ in range(random.randint(6, 16)):
+            if board.is_game_over():
                 break
-            board.push(random.choice(legal_moves))
+            moves = list(board.legal_moves)
+            board.push(random.choice(moves))
         if board.is_game_over():
             tries += 1
             continue
-        # Ask Stockfish for mate in n
+
         stockfish.set_fen_position(board.fen())
-        info = stockfish.get_best_move_time(300)
-        if info is None:
-            tries += 1
-            continue
-        # Check for mate in n
-        stockfish.set_fen_position(board.fen())
-        analysis = stockfish.get_top_moves(1)
-        if analysis and 'Mate' in analysis[0]:
-            mate_type = analysis[0]['Mate']
-            if mate_type == n and board.turn:  # Only consider puzzles where it's White to move
-                solution_moves = []
-                for i in range(n):
-                    move = stockfish.get_best_move()
-                    if move is None:
-                        break
-                    solution_moves.append(move)
-                    board.push(chess.Move.from_uci(move))
-                    stockfish.set_fen_position(board.fen())
-                # Validate if checkmate is reached
-                if board.is_checkmate():
-                    return board.fen(), solution_moves
+        info = stockfish.get_top_moves(1)
+        if info and info[0].get("Mate") == n:
+            solution_moves = []
+            temp_board = board.copy()
+            for _ in range(n):
+                move = stockfish.get_best_move()
+                if not move:
+                    break
+                solution_moves.append(move)
+                temp_board.push(chess.Move.from_uci(move))
+                stockfish.set_fen_position(temp_board.fen())
+            if temp_board.is_checkmate() and len(solution_moves) == n:
+                return board.fen(), solution_moves
         tries += 1
-    raise Exception("Failed to generate a mate in {} puzzle after many tries.".format(n))
+    raise Exception(f"Could not generate mate in {n} puzzle after 1000 tries")
 
 def generate_title_description(mate_type, gm_names):
     gm_name = random.choice(gm_names) if gm_names else "Unknown Grandmaster"
@@ -85,14 +74,13 @@ def upload_puzzle_and_solution():
     db = get_firestore_client()
     gm_names = get_grandmaster_names(db)
 
-    # Setup Stockfish engine
     stockfish = Stockfish(path=STOCKFISH_PATH, parameters={"Threads": 2, "Minimum Thinking Time": 30})
 
-    # Generate puzzle
     n = random.choice([1, 2, 3])
     mate_type = f"mate in {n}"
+
     try:
-        fen, solution_moves = generate_mate_in_n_puzzle(stockfish, n)
+        fen, solution_moves = find_mate_in_n(stockfish, n)
     except Exception as e:
         print(f"Error generating puzzle: {e}")
         return
