@@ -304,17 +304,22 @@
 
         // --- Puzzle Loading ---
         const loadPuzzles = async () => {
-            const snapshot = await db.collection('puzzles').get();
-            const puzzles = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            const grid = document.getElementById('puzzle-grid');
-            grid.innerHTML = '';
-            puzzles.forEach(puzzle => {
-                const card = document.createElement('div');
-                card.className = "p-4 border rounded-lg cursor-pointer hover:bg-gray-100 hover:shadow-md transition-shadow";
-                card.innerHTML = `<h3 class="font-bold text-gray-800">${puzzle.title || 'Untitled'}</h3><p class="text-sm text-gray-600">${puzzle.description || ''}</p>`;
-                card.onclick = () => { showTab('solve'); loadPuzzle(puzzle); };
-                grid.appendChild(card);
-            });
+            try {
+                const snapshot = await db.collection('puzzles').get();
+                const puzzles = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                const grid = document.getElementById('puzzle-grid');
+                grid.innerHTML = '';
+                puzzles.forEach(puzzle => {
+                    const card = document.createElement('div');
+                    card.className = "p-4 border rounded-lg cursor-pointer hover:bg-gray-100 hover:shadow-md transition-shadow";
+                    card.innerHTML = `<h3 class="font-bold text-gray-800">${puzzle.title || 'Untitled'}</h3><p class="text-sm text-gray-600">${puzzle.description || ''}</p>`;
+                    card.onclick = () => { showTab('solve'); loadPuzzle(puzzle); };
+                    grid.appendChild(card);
+                });
+            } catch (err) {
+                console.error("Error loading puzzles:", err);
+                document.getElementById('puzzle-grid').innerHTML = `<p class="text-red-600">Failed to load puzzles. See console for details.</p>`;
+            }
         };
 
         const loadPuzzle = (puzzle) => {
@@ -420,8 +425,8 @@
             if (s.includes(',') || s.includes(' ')) {
                 return s.split(/[\s,]+/).map(x => x.trim()).filter(Boolean);
             }
-            // if looks like concatenated UCI moves (length multiple of 4 and only alnum)
-            const onlyAlnum = /^[a-h1-8]+$/i.test(s);
+            // if looks like concatenated UCI moves (letters/numbers only and length multiple of 4)
+            const onlyAlnum = /^[a-h1-8]+$/i.test(s.replace(/[^a-z0-9]/gi, ''));
             if (onlyAlnum && (s.length % 4 === 0)) {
                 const arr = [];
                 for (let i = 0; i < s.length; i += 4) arr.push(s.slice(i, i+4));
@@ -431,73 +436,111 @@
             return [s];
         };
 
-        // --- Submit Solution & Ranking ---
+        // --- Submit Solution & Ranking (improved error handling & logging) ---
         const submitSolution = async () => {
             if (!currentPuzzle) return;
             clearInterval(timerInterval);
             canMove = false;
 
             try {
-                // Try to get solution in several ways:
-                // 1) from the loaded puzzle document field 'solution' (string) or 'solution_moves' or 'solutions'
-                // 2) fallback: look up solutions collection by document id == puzzle id
-                let correctRaw = currentPuzzle.solution || currentPuzzle.solution_moves || currentPuzzle.solutions;
+                // 1) Try reading solution from the loaded puzzle document
+                let correctRaw = currentPuzzle.solution || currentPuzzle.solution_moves || currentPuzzle.solutions || currentPuzzle.solution_str || currentPuzzle.solutionMoves;
+
+                // 2) If not present, attempt to fetch a document in solutions collection with same id
                 if (!correctRaw) {
-                    // try to fetch solutions doc with same id
-                    const solDoc = await db.collection('solutions').doc(currentPuzzle.id).get();
-                    if (solDoc.exists) {
-                        const data = solDoc.data();
-                        correctRaw = data.solutions || data.solution_moves || data.solution || data.solution_str || data.solutionMoves;
-                    } else {
-                        // try query where puzzleId/puzzle_id field matches
-                        const q = await db.collection('solutions').where('puzzleId', '==', currentPuzzle.id).limit(1).get();
-                        if (!q.empty) {
-                            const d = q.docs[0].data();
-                            correctRaw = d.solutions || d.solution_moves || d.solution || d.solution_str || d.solutionMoves;
+                    try {
+                        const solDoc = await db.collection('solutions').doc(currentPuzzle.id).get();
+                        if (solDoc.exists) {
+                            const data = solDoc.data();
+                            correctRaw = data.solutions || data.solution_moves || data.solution || data.solution_str || data.solutionMoves;
                         }
+                    } catch (innerErr) {
+                        // log but continue to other fallbacks
+                        console.warn("solutions.doc fetch failed:", innerErr);
+                    }
+                }
+
+                // 3) If still not present, try querying solutions where puzzleId/puzzle_id matches
+                if (!correctRaw) {
+                    try {
+                        const q1 = await db.collection('solutions').where('puzzleId', '==', currentPuzzle.id).limit(1).get();
+                        if (!q1.empty) {
+                            const d = q1.docs[0].data();
+                            correctRaw = d.solutions || d.solution_moves || d.solution || d.solution_str || d.solutionMoves;
+                        } else {
+                            const q2 = await db.collection('solutions').where('puzzle_id', '==', currentPuzzle.id).limit(1).get();
+                            if (!q2.empty) {
+                                const d = q2.docs[0].data();
+                                correctRaw = d.solutions || d.solution_moves || d.solution || d.solution_str || d.solutionMoves;
+                            }
+                        }
+                    } catch (innerErr2) {
+                        console.warn("solutions.query fetch failed:", innerErr2);
                     }
                 }
 
                 if (!correctRaw) {
+                    console.warn("No solution field found for puzzle:", currentPuzzle.id, currentPuzzle);
                     alert("Solution for this puzzle could not be found!");
                     resetPuzzle();
                     return;
                 }
 
-                const correctMoves = normalizeSolution(correctRaw); // array
-                const userMoves = moveHistory.slice(); // already UCI array
+                // Normalize to array of UCI-like tokens
+                const correctMoves = normalizeSolution(correctRaw).map(m => m.toLowerCase());
+                const userMoves = moveHistory.map(m => (''+m).toLowerCase());
 
-                // Basic validation: check exact sequence match
-                const isCorrect = (userMoves.length === correctMoves.length) &&
-                    userMoves.every((m, i) => m.toLowerCase() === (correctMoves[i] || '').toLowerCase());
+                // If puzzle solution is a single move (mate in 1), allow first-move-only check
+                let isCorrect = false;
+                if (correctMoves.length === 1) {
+                    // compare only the first user move if user provided at least one move
+                    isCorrect = userMoves.length >= 1 && userMoves[0] === correctMoves[0];
+                } else {
+                    // require exact sequence match
+                    isCorrect = (userMoves.length === correctMoves.length) &&
+                        userMoves.every((m, i) => m === (correctMoves[i] || ''));
+                }
 
                 // time taken in seconds:
                 const elapsed = startTime ? Math.floor((Date.now() - startTime) / 1000) : 0;
 
                 // record the submission
-                await db.collection('submissions').add({
-                    puzzleId: currentPuzzle.id,
-                    userId: currentUser ? currentUser.uid : null,
-                    moves: userMoves,
-                    timeTaken: elapsed,
-                    correct: isCorrect,
-                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                });
+                try {
+                    await db.collection('submissions').add({
+                        puzzleId: currentPuzzle.id,
+                        userId: currentUser ? currentUser.uid : null,
+                        moves: userMoves,
+                        timeTaken: elapsed,
+                        correct: isCorrect,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                } catch (recErr) {
+                    console.warn("Failed writing submission record:", recErr);
+                }
 
                 if (isCorrect) {
                     // increment user's solved count
                     if (currentUser) {
-                        await db.collection('users').doc(currentUser.uid).set({
-                            solvedCount: firebase.firestore.FieldValue.increment(1)
-                        }, { merge: true });
+                        try {
+                            await db.collection('users').doc(currentUser.uid).set({
+                                solvedCount: firebase.firestore.FieldValue.increment(1)
+                            }, { merge: true });
+                        } catch (incErr) {
+                            console.warn("Failed incrementing solvedCount:", incErr);
+                        }
 
                         // compute ranking (position among users by solvedCount desc)
-                        const usersSnap = await db.collection('users').orderBy('solvedCount', 'desc').get();
-                        let rank = -1;
-                        usersSnap.forEach((uDoc, idx) => {
-                            if (uDoc.id === currentUser.uid) rank = idx + 1;
-                        });
-                        alert(`Correct! Puzzle Solved!\nTime: ${elapsed}s\nYour rank: ${rank > 0 ? rank : '—'}`);
+                        try {
+                            const usersSnap = await db.collection('users').orderBy('solvedCount', 'desc').get();
+                            let rank = -1;
+                            usersSnap.forEach((uDoc, idx) => {
+                                if (uDoc.id === currentUser.uid) rank = idx + 1;
+                            });
+                            alert(`Correct! Puzzle Solved!\nTime: ${elapsed}s\nYour rank: ${rank > 0 ? rank : '—'}`);
+                        } catch (rankErr) {
+                            console.warn("Failed computing rank:", rankErr);
+                            alert(`Correct! Puzzle Solved!\nTime: ${elapsed}s`);
+                        }
                     } else {
                         alert("Correct! Puzzle Solved!");
                     }
@@ -506,9 +549,18 @@
                 }
 
             } catch (error) {
+                // Improved error handling: log details and show message
                 console.error("Error fetching/verifying solution:", error);
-                alert("Could not verify solution at this time.");
+                // If it's a Firestore permission error, show explicit hint
+                if (error && error.code) {
+                    alert(`Could not verify solution at this time. (Firestore error: ${error.code})`);
+                } else if (error && error.message) {
+                    alert(`Could not verify solution at this time: ${error.message}`);
+                } else {
+                    alert("Could not verify solution at this time.");
+                }
             }
+
             resetPuzzle();
         };
 
@@ -538,7 +590,7 @@
             if (!docId) { alert('Invalid title for use as an ID.'); return; }
 
             const solutionArray = normalizeSolution(solutionInput);
-            // prefer storing solution as a comma-separated UCI string in puzzle doc for generator compatibility
+            // prefer storing solution as a comma-separated UCI string in puzzle doc for compatibility with backend
             const solutionString = solutionArray.join(',');
 
             try {
@@ -566,7 +618,7 @@
                 loadPuzzles();
             } catch (err) {
                 console.error("Error saving puzzle:", err);
-                alert('An error occurred while saving.');
+                alert('An error occurred while saving. See console for details.');
             }
         };
 
