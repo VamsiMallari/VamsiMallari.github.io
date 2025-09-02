@@ -6,6 +6,7 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 import chess
 from stockfish import Stockfish
+from datetime import datetime
 
 STOCKFISH_PATH = "/usr/games/stockfish"  # Default path in GitHub Actions runner; change if needed.
 
@@ -22,19 +23,16 @@ def get_firestore_client():
 def get_grandmaster_names(db):
     gm_names = []
     try:
-        metadata_ref = db.collection('metadata')
-        docs = metadata_ref.stream()
-        for doc in docs:
+        doc_ref = db.collection('metadata').document('grandmasters')
+        doc = doc_ref.get()
+        if doc.exists:
             data = doc.to_dict()
-            name = data.get('name')
-            if name:
-                gm_names.append(name)
+            gm_names = data.get('names', [])
     except Exception as e:
         print(f"Error fetching grandmaster names: {e}")
     return gm_names
 
 def find_mate_in_n(stockfish, n):
-    # Try random positions until a mate in n is found
     tries = 0
     while tries < 1000:
         board = chess.Board()
@@ -86,6 +84,8 @@ def upload_puzzle_and_solution():
         return
 
     title, description = generate_title_description(mate_type, gm_names)
+    created_at = datetime.utcnow().isoformat() + "Z"
+    solution_str = ', '.join(solution_moves)
 
     puzzle_doc = {
         'title': title,
@@ -94,6 +94,8 @@ def upload_puzzle_and_solution():
         'mate_type': mate_type,
         'created_by': 'github-action',
         'source': 'stockfish',
+        'created_at': created_at,
+        'solution': solution_str  # Solution as a string for website use
     }
     try:
         puzzle_ref = db.collection('puzzles').add(puzzle_doc)
@@ -108,6 +110,7 @@ def upload_puzzle_and_solution():
         'solution_moves': solution_moves,
         'mate_type': mate_type,
         'fen': fen,
+        'created_at': created_at
     }
     try:
         db.collection('solutions').add(solution_doc)
